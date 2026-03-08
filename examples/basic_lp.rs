@@ -45,7 +45,7 @@ fn main() {
     println!("  Status: {:?}", solution.status);
     println!("  Optimal profit: {:.4}", -solution.value.unwrap());
 
-    let x_vals = &solution[&x];
+    let x_vals = x.value(&solution);
     println!("  x1 = {:.4}", x_vals[(0, 0)]);
     println!("  x2 = {:.4}", x_vals[(1, 0)]);
     println!("  x3 = {:.4}", x_vals[(2, 0)]);

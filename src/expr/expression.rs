@@ -488,6 +488,21 @@ impl Expr {
     }
 }
 
+impl std::ops::Index<(usize, usize)> for Array {
+    type Output = f64;
+
+    fn index(&self, (row, col): (usize, usize)) -> &f64 {
+        match self {
+            Array::Dense(m) => &m[(row, col)],
+            Array::Scalar(v) => {
+                assert!(row == 0 && col == 0, "scalar index out of bounds");
+                v
+            }
+            Array::Sparse(_) => panic!("use Array::Dense for indexing"),
+        }
+    }
+}
+
 // Convenient From implementations for automatic conversion
 impl From<f64> for Expr {
     fn from(value: f64) -> Self {

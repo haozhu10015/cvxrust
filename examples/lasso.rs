@@ -38,7 +38,7 @@ fn main() {
         .solve()
         .expect("Failed to solve");
 
-    let x_ls_vals = &solution_ls[&x_ls];
+    let x_ls_vals = x_ls.value(&solution_ls);
     println!("Coefficients:");
     for i in 0..10 {
         println!("  x{}: {:.6}", i + 1, x_ls_vals[(i, 0)]);
@@ -57,7 +57,7 @@ fn main() {
         .solve()
         .expect("Failed to solve");
 
-    let x_vals = &solution[&x];
+    let x_vals = x.value(&solution);
     println!("Coefficients:");
     for i in 0..10 {
         let val = x_vals[(i, 0)];
@@ -65,6 +65,12 @@ fn main() {
         println!("  x{}: {:.6}{}", i + 1, val, marker);
     }
     println!("  Objective: {:.6}", solution.value.unwrap());
+
+    // Expression values: inspect individual terms
+    let fit_err = sum_squares(&residual).value(&solution).as_scalar().unwrap();
+    let l1_pen = norm1(&x).value(&solution).as_scalar().unwrap();
+    println!("  Fit error (expression eval):   {:.6}", fit_err);
+    println!("  L1 penalty (expression eval):  {:.6}", l1_pen);
 
     // LASSO with strong regularization
     println!("\n--- LASSO (lambda = 1.0) ---\n");
@@ -78,7 +84,7 @@ fn main() {
         .solve()
         .expect("Failed to solve");
 
-    let x2_vals = &solution2[&x2];
+    let x2_vals = x2.value(&solution2);
     println!("Coefficients:");
     for i in 0..10 {
         let val = x2_vals[(i, 0)];

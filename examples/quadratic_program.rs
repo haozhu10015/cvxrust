@@ -33,7 +33,7 @@ fn main() {
     println!("  Status: {:?}", solution.status);
     println!("  Optimal value: {:.6}", solution.value.unwrap());
 
-    let x_vals = &solution[&x];
+    let x_vals = x.value(&solution);
     println!("  x1 = {:.6}", x_vals[(0, 0)]);
     println!("  x2 = {:.6}", x_vals[(1, 0)]);
     println!("  Sum: {:.6}", x_vals[(0, 0)] + x_vals[(1, 0)]);

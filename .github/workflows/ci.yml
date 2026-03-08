@@ -115,7 +115,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.70"
+          toolchain: "1.71"
 
       - name: Check build with MSRV
         run: cargo check --all-features

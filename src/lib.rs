@@ -80,7 +80,8 @@ pub mod prelude {
     // Expression types
     pub use crate::expr::{
         constant, constant_dmatrix, constant_matrix, constant_sparse, constant_vec, eye, ones,
-        variable, zeros, Array, Expr, ExprId, IntoConstant, Shape, VariableBuilder, VariableExt,
+        variable, zeros, Array, Evaluable, Expr, ExprId, IntoConstant, Shape, VariableBuilder,
+        VariableExt,
     };
 
     // Atoms

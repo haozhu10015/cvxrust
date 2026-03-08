@@ -10,7 +10,7 @@ use clarabel::solver::{
 };
 
 use super::stuffing::{ConeDims, StuffedProblem, VariableMap};
-use crate::expr::{Array, ExprId};
+use crate::expr::{Array, Evaluable, ExprId};
 
 /// Solution status from the solver.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -238,6 +238,12 @@ impl std::ops::Index<&crate::expr::Expr> for Solution {
             }
             Array::Sparse(_) => unreachable!("Solution values are never sparse"),
         }
+    }
+}
+
+impl Evaluable for Solution {
+    fn get_variable_value(&self, id: ExprId) -> Option<&Array> {
+        self.primal.as_ref()?.get(&id)
     }
 }
 

@@ -28,9 +28,30 @@ fn main() {
     println!("  Status: {:?}", solution.status);
     println!("  Optimal value: {:.6}", solution.value.unwrap());
 
-    let w_vals = &solution[&w];
-    println!("  w0 (intercept) = {:.6}", w_vals[(0, 0)]);
-    println!("  w1 (slope) = {:.6}", w_vals[(1, 0)]);
+    // Two equivalent ways to retrieve variable values:
+    let w_vals = &solution[&w]; // index into solution directly
+    let w_vals2 = w.value(&solution); // call .value() on the variable
+    println!(
+        "  w0 (intercept) = {:.6} / {:.6}",
+        w_vals[(0, 0)],
+        w_vals2[(0, 0)]
+    );
+    println!(
+        "  w1 (slope)     = {:.6} / {:.6}",
+        w_vals[(1, 0)],
+        w_vals2[(1, 0)]
+    );
+
+    // Expression values: evaluate any sub-expression at the solution
+    let fitted = matmul(&a, &w).value(&solution);
+    println!(
+        "  Fitted values: [{:.2}, {:.2}, {:.2}, {:.2}, {:.2}]",
+        fitted[(0, 0)],
+        fitted[(1, 0)],
+        fitted[(2, 0)],
+        fitted[(3, 0)],
+        fitted[(4, 0)]
+    );
 
     // Constrained least squares (w >= 0)
     println!("\n--- Constrained Least Squares (w >= 0) ---\n");
@@ -47,7 +68,7 @@ fn main() {
     println!("  Status: {:?}", solution2.status);
     println!("  Optimal value: {:.6}", solution2.value.unwrap());
 
-    let w2_vals = &solution2[&w2];
+    let w2_vals = w2.value(&solution2);
     println!("  w0 (intercept) = {:.6}", w2_vals[(0, 0)]);
-    println!("  w1 (slope) = {:.6}", w2_vals[(1, 0)]);
+    println!("  w1 (slope)     = {:.6}", w2_vals[(1, 0)]);
 }

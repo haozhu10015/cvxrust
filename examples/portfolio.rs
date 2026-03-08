@@ -47,12 +47,19 @@ fn main() {
 
     // Results
     println!("Optimal Portfolio:");
-    let portfolio = &solution[&x];
+    let portfolio = x.value(&solution);
     let assets = ["A", "B", "C", "D"];
 
     for i in 0..4 {
         println!("  Asset {}: {:.2}%", assets[i], portfolio[(i, 0)] * 100.0);
     }
+
+    // Expression values: evaluate return and risk directly
+    let actual_return = dot(&mu, &x).value(&solution).as_scalar().unwrap();
+    println!(
+        "  Actual return (expression eval): {:.2}%",
+        actual_return * 100.0
+    );
 
     let variance = solution.value.unwrap();
     let std_dev = variance.sqrt();
