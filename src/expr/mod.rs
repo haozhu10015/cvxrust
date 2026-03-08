@@ -7,11 +7,13 @@
 //! - Constant creation via `constant()` and related functions
 
 pub mod constant;
+pub mod eval;
 pub mod expression;
 pub mod shape;
 pub mod variable;
 
 // Re-export main types
+pub use eval::Evaluable;
 pub use constant::{
     constant, constant_dmatrix, constant_matrix, constant_sparse, constant_vec, eye, ones, zeros,
     IntoConstant,
