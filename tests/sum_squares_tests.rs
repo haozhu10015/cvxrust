@@ -21,11 +21,20 @@ fn test_sum_squares_scalar_constrained() {
     let eval_sq = sum_squares(&residual).value(&sol).as_scalar().unwrap();
     let eval_norm = norm2(&residual).value(&sol).as_scalar().unwrap();
 
-    assert!((reported - 4.0).abs() < 1e-4, "objective should be 4.0, got {reported}");
-    assert!((reported - eval_sq).abs() < 1e-4, "reported obj must equal sum_squares evaluated at solution");
+    assert!(
+        (reported - 4.0).abs() < 1e-4,
+        "objective should be 4.0, got {reported}"
+    );
+    assert!(
+        (reported - eval_sq).abs() < 1e-4,
+        "reported obj must equal sum_squares evaluated at solution"
+    );
     // Sanity check: the L2 norm (sqrt(4) = 2) is clearly different from the correct answer
     assert!((eval_norm - 2.0).abs() < 1e-4);
-    assert!((reported - eval_norm).abs() > 0.5, "objective must not equal the L2 norm (old bug)");
+    assert!(
+        (reported - eval_norm).abs() > 0.5,
+        "objective must not equal the L2 norm (old bug)"
+    );
 }
 
 #[test]
@@ -45,11 +54,20 @@ fn test_sum_squares_vector_constrained() {
     let eval_sq = sum_squares(&residual).value(&sol).as_scalar().unwrap();
     let eval_norm = norm2(&residual).value(&sol).as_scalar().unwrap();
 
-    assert!((reported - 5.0).abs() < 1e-4, "objective should be 5.0, got {reported}");
-    assert!((reported - eval_sq).abs() < 1e-4, "reported obj must equal sum_squares evaluated at solution");
+    assert!(
+        (reported - 5.0).abs() < 1e-4,
+        "objective should be 5.0, got {reported}"
+    );
+    assert!(
+        (reported - eval_sq).abs() < 1e-4,
+        "reported obj must equal sum_squares evaluated at solution"
+    );
     // Sanity check: the L2 norm (sqrt(5) ≈ 2.236) is clearly different
     assert!((eval_norm - 5f64.sqrt()).abs() < 1e-4);
-    assert!((reported - eval_norm).abs() > 0.5, "objective must not equal the L2 norm (old bug)");
+    assert!(
+        (reported - eval_norm).abs() > 0.5,
+        "objective must not equal the L2 norm (old bug)"
+    );
 }
 
 #[test]
@@ -73,8 +91,17 @@ fn test_sum_squares_matmul_constrained() {
     let eval_sq = sum_squares(&residual).value(&sol).as_scalar().unwrap();
     let eval_norm = norm2(&residual).value(&sol).as_scalar().unwrap();
 
-    assert!((reported - 10.0).abs() < 1e-4, "objective should be 10.0, got {reported}");
-    assert!((reported - eval_sq).abs() < 1e-4, "reported obj must equal sum_squares evaluated at solution");
+    assert!(
+        (reported - 10.0).abs() < 1e-4,
+        "objective should be 10.0, got {reported}"
+    );
+    assert!(
+        (reported - eval_sq).abs() < 1e-4,
+        "reported obj must equal sum_squares evaluated at solution"
+    );
     assert!((eval_norm - 10f64.sqrt()).abs() < 1e-4);
-    assert!((reported - eval_norm).abs() > 0.5, "objective must not equal the L2 norm (old bug)");
+    assert!(
+        (reported - eval_norm).abs() > 0.5,
+        "objective must not equal the L2 norm (old bug)"
+    );
 }
