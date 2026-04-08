@@ -1,5 +1,9 @@
 # cvxrust
 
+[![Crates.io](https://img.shields.io/crates/v/cvxrust.svg)](https://crates.io/crates/cvxrust)
+[![Docs.rs](https://docs.rs/cvxrust/badge.svg)](https://docs.rs/cvxrust)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+
 A Disciplined Convex Programming (DCP) library for Rust, inspired by [CVXPY](https://www.cvxpy.org/).
 
 cvxrust provides a domain-specific language for specifying convex optimization problems with automatic convexity verification and solving via the [Clarabel](https://github.com/oxfordcontrol/Clarabel.rs) solver.
