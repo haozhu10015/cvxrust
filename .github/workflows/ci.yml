@@ -105,7 +105,7 @@ jobs:
         run: cargo run --example portfolio
 
   msrv:
-    name: Check MSRV (1.85)
+    name: Check MSRV (1.87)
     runs-on: ubuntu-latest
 
     steps:
