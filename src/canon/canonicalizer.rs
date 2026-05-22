@@ -953,18 +953,15 @@ impl CanonContext {
     }
 
     fn canonicalize_quad_over_lin(&mut self, x: &Expr, y: &Expr) -> CanonExpr {
-        // ||x||_2^2 / y: Introduce t, rotated SOC constraint
+        // ||x||_2^2 / y: introduce t with ||[2x; t-y]||_2 <= t+y.
         let cx = self.canonicalize_expr(x, false).as_linear().clone();
-        let _cy = self.canonicalize_expr(y, false).as_linear().clone();
+        let cy = self.canonicalize_expr(y, false).as_linear().clone();
         let (_, t) = self.new_nonneg_aux_var(Shape::scalar());
 
-        // Rotated SOC: ||x||^2 <= t * y
-        // This requires proper rotated SOC support
-        // Simplified: add as SOC
-        self.constraints.push(ConeConstraint::SOC {
-            t: t.clone(),
-            x: cx,
-        });
+        let soc_t = t.add(&cy);
+        let soc_x = self.vstack_lin(&t.add(&cy.neg()), &cx.scale(2.0));
+        self.constraints
+            .push(ConeConstraint::SOC { t: soc_t, x: soc_x });
 
         CanonExpr::Linear(t)
     }
