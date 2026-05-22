@@ -942,19 +942,12 @@ impl CanonContext {
             });
         }
 
-        // SOC reformulation: ||x||^2 <= t iff SOC(sqrt(t), x)
-        // Actually: introduce t, s, with t = s + 1, and SOC(s, x)
-        // Simpler: introduce t >= 0, with ||x||_2^2 <= t via rotated SOC
-        // Or: ||x||^2 = quad_over_lin(x, 1)
         let (_, t) = self.new_nonneg_aux_var(Shape::scalar());
-
-        // Rotated SOC: ||x||^2 <= 2 * t * 1 = 2t
-        // Standard form: || [2t - 1; 2x] ||_2 <= 2t + 1
-        // Simplified: use SOC with proper reformulation
-        self.constraints.push(ConeConstraint::SOC {
-            t: t.clone(),
-            x: x.clone(),
-        });
+        let one = LinExpr::scalar(1.0);
+        let soc_t = t.add(&one);
+        let soc_x = self.vstack_lin(&t.add(&one.neg()), &x.scale(2.0));
+        self.constraints
+            .push(ConeConstraint::SOC { t: soc_t, x: soc_x });
 
         CanonExpr::Linear(t)
     }
