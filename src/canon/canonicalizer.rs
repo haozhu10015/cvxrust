@@ -1115,11 +1115,6 @@ impl CanonContext {
             return CanonExpr::Linear(cx);
         }
 
-        if (p - 2.0).abs() < 1e-10 {
-            // x^2 use sum_squares approach (more efficient)
-            return self.canonicalize_sum_squares(&Expr::from(x), false);
-        }
-
         // Create auxiliary variable t for the result
         let (t_var_id, t) = self.new_nonneg_aux_var(cx.shape.clone());
         let _ = t_var_id;
