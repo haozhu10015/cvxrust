@@ -444,8 +444,12 @@ impl CanonContext {
         }
     }
 
-    fn canonicalize_sum(&mut self, a: &Expr, _axis: Option<usize>) -> CanonExpr {
+    fn canonicalize_sum(&mut self, a: &Expr, axis: Option<usize>) -> CanonExpr {
         let ca = self.canonicalize_expr(a, false).as_linear().clone();
+        if let Some(axis) = axis {
+            return self.canonicalize_sum_axis_lin(&ca, axis);
+        }
+
         // Sum all elements: multiply by ones vector
         let size = ca.size();
         let ones = DMatrix::from_element(1, size, 1.0);
@@ -466,6 +470,50 @@ impl CanonContext {
             coeffs: new_coeffs,
             constant: new_const,
             shape: Shape::scalar(),
+        })
+    }
+
+    fn canonicalize_sum_axis_lin(&self, x: &LinExpr, axis: usize) -> CanonExpr {
+        if x.shape.ndim() <= 1 {
+            return CanonExpr::Linear(x.clone());
+        }
+
+        let rows = x.shape.rows();
+        let cols = x.shape.cols();
+        let (out_size, mut s_rows, mut s_cols, mut s_vals) = match axis {
+            0 => (cols, Vec::new(), Vec::new(), Vec::new()),
+            1 => (rows, Vec::new(), Vec::new(), Vec::new()),
+            _ => return CanonExpr::Linear(x.clone()),
+        };
+
+        for col in 0..cols {
+            for row in 0..rows {
+                let input_idx = row + col * rows;
+                let output_idx = if axis == 0 { col } else { row };
+                s_rows.push(output_idx);
+                s_cols.push(input_idx);
+                s_vals.push(1.0);
+            }
+        }
+
+        let selector =
+            crate::sparse::triplets_to_csc(out_size, x.size(), &s_rows, &s_cols, &s_vals);
+
+        let mut new_coeffs = std::collections::HashMap::new();
+        for (var_id, coeff) in &x.coeffs {
+            new_coeffs.insert(*var_id, crate::sparse::csc_matmul(&selector, coeff));
+        }
+
+        let flat_const = x
+            .constant
+            .clone()
+            .reshape_generic(nalgebra::Dyn(x.size()), nalgebra::Dyn(1));
+        let new_const = csc_to_dense(&selector) * flat_const;
+
+        CanonExpr::Linear(LinExpr {
+            coeffs: new_coeffs,
+            constant: new_const,
+            shape: Shape::vector(out_size),
         })
     }
 
