@@ -10,6 +10,8 @@ use clarabel::solver::{
 };
 
 use super::stuffing::{ConeDims, StuffedProblem, VariableMap};
+use nalgebra::DMatrix;
+
 use crate::expr::{Array, Evaluable, ExprId};
 
 /// Solution status from the solver.
@@ -345,7 +347,13 @@ fn unpack_primal(x: &[f64], var_map: &VariableMap) -> HashMap<ExprId, Array> {
 
     for (&var_id, &(start, size)) in &var_map.id_to_col {
         let values: Vec<f64> = x[start..start + size].to_vec();
-        let arr = if size == 1 {
+        let arr = if let Some(shape) = var_map.shape(var_id) {
+            if shape.is_scalar() {
+                Array::Scalar(values[0])
+            } else {
+                Array::Dense(DMatrix::from_vec(shape.rows(), shape.cols(), values))
+            }
+        } else if size == 1 {
             Array::Scalar(values[0])
         } else {
             Array::from_vec(values)
