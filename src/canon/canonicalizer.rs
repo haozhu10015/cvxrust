@@ -1280,8 +1280,8 @@ impl CanonContext {
             expr.constant[(idx, 0)]
         } else {
             // For matrix, compute flat index
-            let row = idx / expr.shape.cols();
-            let col = idx % expr.shape.cols();
+            let row = idx % expr.shape.rows();
+            let col = idx / expr.shape.rows();
             expr.constant[(row, col)]
         };
 
