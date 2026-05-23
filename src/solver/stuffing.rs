@@ -42,6 +42,8 @@ impl ConeDims {
 pub struct VariableMap {
     /// Map from variable ID to (start_col, size).
     pub id_to_col: HashMap<ExprId, (usize, usize)>,
+    /// Original variable shapes, used when unpacking solver results.
+    pub id_to_shape: HashMap<ExprId, Shape>,
     /// Total number of optimization variables.
     pub total_vars: usize,
 }
@@ -50,16 +52,19 @@ impl VariableMap {
     /// Create from a list of (variable_id, shape) pairs.
     pub fn from_vars(vars: &[(ExprId, Shape)]) -> Self {
         let mut id_to_col = HashMap::new();
+        let mut id_to_shape = HashMap::new();
         let mut offset = 0;
 
         for (var_id, shape) in vars {
             let size = shape.size();
             id_to_col.insert(*var_id, (offset, size));
+            id_to_shape.insert(*var_id, shape.clone());
             offset += size;
         }
 
         VariableMap {
             id_to_col,
+            id_to_shape,
             total_vars: offset,
         }
     }
@@ -67,6 +72,11 @@ impl VariableMap {
     /// Get the column range for a variable.
     pub fn get(&self, var_id: ExprId) -> Option<(usize, usize)> {
         self.id_to_col.get(&var_id).copied()
+    }
+
+    /// Get the original shape for a variable.
+    pub fn shape(&self, var_id: ExprId) -> Option<&Shape> {
+        self.id_to_shape.get(&var_id)
     }
 }
 
@@ -424,7 +434,7 @@ fn stuff_linear_expr(
     let size = expr.size();
     for i in 0..expr.constant.nrows() {
         for j in 0..expr.constant.ncols() {
-            let idx = i * expr.constant.ncols() + j;
+            let idx = i + j * expr.constant.nrows();
             if idx < size {
                 let const_val = expr.constant[(i, j)];
                 // For Zero (negate=false): b = -constant

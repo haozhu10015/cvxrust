@@ -314,8 +314,10 @@ impl Expr {
                     let dims = a.shape();
                     if dims.ndim() <= 1 {
                         Shape::scalar()
-                    } else {
+                    } else if *axis == Some(0) {
                         Shape::vector(dims.cols())
+                    } else {
+                        Shape::vector(dims.rows())
                     }
                 } else {
                     Shape::scalar()
@@ -569,5 +571,22 @@ mod tests {
         });
         assert_eq!(c.shape(), Shape::matrix(3, 1));
         assert!(c.is_constant());
+    }
+
+    #[test]
+    fn test_sum_axis_shape() {
+        let x = Expr::Variable(VariableData {
+            id: ExprId::new(),
+            shape: Shape::matrix(2, 3),
+            name: None,
+            nonneg: false,
+            nonpos: false,
+        });
+
+        assert_eq!(
+            Expr::Sum(Arc::new(x.clone()), Some(0)).shape(),
+            Shape::vector(3)
+        );
+        assert_eq!(Expr::Sum(Arc::new(x), Some(1)).shape(), Shape::vector(2));
     }
 }
