@@ -193,13 +193,17 @@ pub struct IndexSpec {
     /// Ranges for each dimension: (start, stop, step).
     /// None means take the whole dimension.
     pub ranges: Vec<Option<(usize, usize, usize)>>,
+    /// Whether each indexed dimension was selected by an integer index.
+    pub drop_axes: Vec<bool>,
 }
 
 impl IndexSpec {
     /// Create an index spec for a single element.
     pub fn element(indices: Vec<usize>) -> Self {
+        let len = indices.len();
         IndexSpec {
             ranges: indices.into_iter().map(|i| Some((i, i + 1, 1))).collect(),
+            drop_axes: vec![true; len],
         }
     }
 
@@ -207,12 +211,40 @@ impl IndexSpec {
     pub fn range(start: usize, stop: usize) -> Self {
         IndexSpec {
             ranges: vec![Some((start, stop, 1))],
+            drop_axes: vec![false],
         }
     }
 
     /// Create an index spec that takes everything.
     pub fn all() -> Self {
-        IndexSpec { ranges: vec![None] }
+        IndexSpec {
+            ranges: vec![None],
+            drop_axes: vec![false],
+        }
+    }
+
+    /// Compute the output shape when this spec is applied to a base shape.
+    pub fn output_shape(&self, base: &Shape) -> Shape {
+        let mut new_dims = Vec::new();
+        for i in 0..base.ndim() {
+            let range = self.ranges.get(i).copied().flatten();
+            let drop_axis = self.drop_axes.get(i).copied().unwrap_or(false);
+            match range {
+                Some((start, stop, step)) => {
+                    let size = (stop - start).div_ceil(step);
+                    if !drop_axis {
+                        new_dims.push(size);
+                    }
+                }
+                None => new_dims.push(base.dims()[i]),
+            }
+        }
+
+        if new_dims.is_empty() {
+            Shape::scalar()
+        } else {
+            Shape::from_dims(new_dims)
+        }
     }
 }
 
@@ -324,31 +356,7 @@ impl Expr {
                 }
             }
             Expr::Reshape(_, shape) => shape.clone(),
-            Expr::Index(a, spec) => {
-                // Simplified: compute resulting shape from index spec
-                let base = a.shape();
-                let mut new_dims = Vec::new();
-                for (i, r) in spec.ranges.iter().enumerate() {
-                    match r {
-                        Some((start, stop, step)) => {
-                            let size = (stop - start).div_ceil(*step);
-                            if size > 1 {
-                                new_dims.push(size);
-                            }
-                        }
-                        None => {
-                            if i < base.ndim() {
-                                new_dims.push(base.dims()[i]);
-                            }
-                        }
-                    }
-                }
-                if new_dims.is_empty() {
-                    Shape::scalar()
-                } else {
-                    Shape::from_dims(new_dims)
-                }
-            }
+            Expr::Index(a, spec) => spec.output_shape(&a.shape()),
             Expr::VStack(exprs) => {
                 if exprs.is_empty() {
                     return Shape::scalar();

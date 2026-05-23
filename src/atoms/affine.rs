@@ -243,13 +243,53 @@ pub fn dot(a: &Expr, b: &Expr) -> Expr {
 /// Index into an expression.
 pub fn index(expr: &Expr, idx: usize) -> Expr {
     use crate::expr::IndexSpec;
-    Expr::Index(Arc::new(expr.clone()), IndexSpec::element(vec![idx]))
+    let shape = expr.shape();
+    assert!(!shape.is_scalar(), "cannot index a scalar expression");
+    assert!(
+        idx < shape.rows(),
+        "index {} out of bounds for first axis with length {}",
+        idx,
+        shape.rows()
+    );
+
+    let spec = if shape.is_matrix() {
+        IndexSpec {
+            ranges: vec![Some((idx, idx + 1, 1)), None],
+            drop_axes: vec![true, false],
+        }
+    } else {
+        IndexSpec::element(vec![idx])
+    };
+    Expr::Index(Arc::new(expr.clone()), spec)
 }
 
 /// Slice a range from an expression.
 pub fn slice(expr: &Expr, start: usize, stop: usize) -> Expr {
     use crate::expr::IndexSpec;
-    Expr::Index(Arc::new(expr.clone()), IndexSpec::range(start, stop))
+    let shape = expr.shape();
+    assert!(!shape.is_scalar(), "cannot slice a scalar expression");
+    assert!(
+        start <= stop,
+        "slice start {} must be less than or equal to stop {}",
+        start,
+        stop
+    );
+    assert!(
+        stop <= shape.rows(),
+        "slice stop {} out of bounds for first axis with length {}",
+        stop,
+        shape.rows()
+    );
+
+    let spec = if shape.is_matrix() {
+        IndexSpec {
+            ranges: vec![Some((start, stop, 1)), None],
+            drop_axes: vec![false, false],
+        }
+    } else {
+        IndexSpec::range(start, stop)
+    };
+    Expr::Index(Arc::new(expr.clone()), spec)
 }
 
 /// Cumulative sum along an axis.
@@ -325,6 +365,46 @@ mod tests {
         let x = variable(4);
         let b = matmul(&a, &x);
         assert_eq!(b.shape(), Shape::vector(3));
+    }
+
+    #[test]
+    fn test_index_and_slice_shapes() {
+        let x = variable(10);
+        assert_eq!(index(&x, 1).shape(), Shape::scalar());
+        assert_eq!(slice(&x, 0, 5).shape(), Shape::vector(5));
+
+        let x = variable((10, 10));
+        assert_eq!(index(&x, 1).shape(), Shape::vector(10));
+        assert_eq!(slice(&x, 0, 5).shape(), Shape::matrix(5, 10));
+        assert_eq!(slice(&x, 1, 2).shape(), Shape::matrix(1, 10));
+    }
+
+    #[test]
+    #[should_panic(expected = "index 10 out of bounds")]
+    fn test_matrix_index_out_of_bounds_panics() {
+        let x = variable((10, 10));
+        let _ = index(&x, 10);
+    }
+
+    #[test]
+    #[should_panic(expected = "slice stop 11 out of bounds")]
+    fn test_matrix_slice_stop_out_of_bounds_panics() {
+        let x = variable((10, 10));
+        let _ = slice(&x, 0, 11);
+    }
+
+    #[test]
+    #[should_panic(expected = "slice start 5 must be less than or equal to stop 3")]
+    fn test_slice_start_after_stop_panics() {
+        let x = variable((10, 10));
+        let _ = slice(&x, 5, 3);
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot index a scalar expression")]
+    fn test_scalar_index_panics() {
+        let x = variable(());
+        let _ = index(&x, 0);
     }
 
     #[test]
