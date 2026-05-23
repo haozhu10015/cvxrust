@@ -295,15 +295,17 @@ fn eval_index(a: Array, spec: &IndexSpec) -> crate::Result<Array> {
 
     match spec.ranges.as_slice() {
         [Some((start, stop, step))] => {
+            if *stop > nrows * ncols {
+                return Err(crate::CvxError::InvalidProblem(
+                    "Index out of bounds in eval".into(),
+                ));
+            }
             let indices: Vec<usize> = (*start..*stop).step_by(*step).collect();
             // For column vectors, index rows; otherwise index flat (column-major)
             let data: Vec<f64> = if ncols == 1 {
                 indices.iter().map(|&i| m[(i, 0)]).collect()
             } else {
-                indices
-                    .iter()
-                    .map(|&i| *m.iter().nth(i).unwrap_or(&0.0))
-                    .collect()
+                indices.iter().map(|&i| m.as_slice()[i]).collect()
             };
             if data.len() == 1 {
                 Ok(Array::Scalar(data[0]))
@@ -321,6 +323,21 @@ fn eval_index(a: Array, spec: &IndexSpec) -> crate::Result<Array> {
                 Some((s, e, step)) => (*s..*e).step_by(*step).collect(),
                 None => (0..ncols).collect(),
             };
+            if row_range.iter().any(|&i| i >= nrows) || col_range.iter().any(|&i| i >= ncols) {
+                return Err(crate::CvxError::InvalidProblem(
+                    "Index out of bounds in eval".into(),
+                ));
+            }
+            let row_drop = spec.drop_axes.first().copied().unwrap_or(false);
+            let col_drop = spec.drop_axes.get(1).copied().unwrap_or(false);
+            if row_drop && !col_drop {
+                let data: Vec<f64> = col_range.iter().map(|&j| m[(row_range[0], j)]).collect();
+                return Ok(Array::Dense(DMatrix::from_vec(data.len(), 1, data)));
+            }
+            if !row_drop && col_drop {
+                let data: Vec<f64> = row_range.iter().map(|&i| m[(i, col_range[0])]).collect();
+                return Ok(Array::Dense(DMatrix::from_vec(data.len(), 1, data)));
+            }
             let result = DMatrix::from_fn(row_range.len(), col_range.len(), |i, j| {
                 m[(row_range[i], col_range[j])]
             });
@@ -531,6 +548,7 @@ fn eval_diag(a: Array) -> Array {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::atoms::{index, slice};
     use crate::expr::{constant, variable};
     use crate::prelude::*;
     use std::collections::HashMap;
@@ -620,6 +638,54 @@ mod tests {
         let expr = sum(&x);
         let v = expr.value(&ctx).as_scalar().unwrap();
         assert!((v - 6.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_eval_matrix_first_axis_slice() {
+        let x = constant_dmatrix(DMatrix::from_row_slice(
+            3,
+            4,
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ],
+        ));
+        let (_, ctx) = make_var_scalar(0.0);
+        let value = slice(&x, 0, 2).value(&ctx);
+
+        if let Array::Dense(m) = value {
+            assert_eq!(m.nrows(), 2);
+            assert_eq!(m.ncols(), 4);
+            assert_eq!(m[(0, 0)], 1.0);
+            assert_eq!(m[(1, 0)], 5.0);
+            assert_eq!(m[(0, 3)], 4.0);
+            assert_eq!(m[(1, 3)], 8.0);
+        } else {
+            panic!("expected dense matrix");
+        }
+    }
+
+    #[test]
+    fn test_eval_matrix_first_axis_index() {
+        let x = constant_dmatrix(DMatrix::from_row_slice(
+            3,
+            4,
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ],
+        ));
+        let (_, ctx) = make_var_scalar(0.0);
+        let value = index(&x, 1).value(&ctx);
+
+        if let Array::Dense(m) = value {
+            assert_eq!(m.nrows(), 4);
+            assert_eq!(m.ncols(), 1);
+            assert_eq!(m[(0, 0)], 5.0);
+            assert_eq!(m[(1, 0)], 6.0);
+            assert_eq!(m[(2, 0)], 7.0);
+            assert_eq!(m[(3, 0)], 8.0);
+        } else {
+            panic!("expected dense vector");
+        }
     }
 
     #[test]
