@@ -9,7 +9,7 @@
 use std::ops::{Add, Div, Mul, Neg, Sub};
 use std::sync::Arc;
 
-use crate::expr::{Expr, Shape, constant};
+use crate::expr::{AxisIndex, Expr, IndexSpec, Shape, constant};
 
 // ============================================================================
 // Operator overloading for Expr
@@ -242,54 +242,81 @@ pub fn dot(a: &Expr, b: &Expr) -> Expr {
 
 /// Index into an expression.
 pub fn index(expr: &Expr, idx: usize) -> Expr {
-    use crate::expr::IndexSpec;
-    let shape = expr.shape();
-    assert!(!shape.is_scalar(), "cannot index a scalar expression");
-    assert!(
-        idx < shape.rows(),
-        "index {} out of bounds for first axis with length {}",
-        idx,
-        shape.rows()
-    );
-
-    let spec = if shape.is_matrix() {
-        IndexSpec {
-            ranges: vec![Some((idx, idx + 1, 1)), None],
-            drop_axes: vec![true, false],
-        }
-    } else {
-        IndexSpec::element(vec![idx])
-    };
-    Expr::Index(Arc::new(expr.clone()), spec)
+    select(expr, AxisIndex::Index(idx), AxisIndex::All)
 }
 
 /// Slice a range from an expression.
 pub fn slice(expr: &Expr, start: usize, stop: usize) -> Expr {
-    use crate::expr::IndexSpec;
-    let shape = expr.shape();
-    assert!(!shape.is_scalar(), "cannot slice a scalar expression");
-    assert!(
-        start <= stop,
-        "slice start {} must be less than or equal to stop {}",
-        start,
-        stop
-    );
-    assert!(
-        stop <= shape.rows(),
-        "slice stop {} out of bounds for first axis with length {}",
-        stop,
-        shape.rows()
-    );
+    select(expr, AxisIndex::Slice(start, stop), AxisIndex::All)
+}
 
-    let spec = if shape.is_matrix() {
+/// Select rows and columns from an expression.
+pub fn select(expr: &Expr, rows: AxisIndex, cols: AxisIndex) -> Expr {
+    let shape = expr.shape();
+    assert!(!shape.is_scalar(), "cannot select from a scalar expression");
+
+    let spec = if shape.is_vector() {
+        assert!(
+            cols == AxisIndex::All,
+            "vector selection only supports AxisIndex::All for columns"
+        );
         IndexSpec {
-            ranges: vec![Some((start, stop, 1)), None],
-            drop_axes: vec![false, false],
+            ranges: vec![axis_index_to_range(rows, shape.rows(), "first")],
+            drop_axes: vec![axis_index_drops_axis(rows)],
+        }
+    } else if shape.is_matrix() {
+        IndexSpec {
+            ranges: vec![
+                axis_index_to_range(rows, shape.rows(), "row"),
+                axis_index_to_range(cols, shape.cols(), "column"),
+            ],
+            drop_axes: vec![axis_index_drops_axis(rows), axis_index_drops_axis(cols)],
         }
     } else {
-        IndexSpec::range(start, stop)
+        panic!("select only supports vector and matrix expressions");
     };
     Expr::Index(Arc::new(expr.clone()), spec)
+}
+
+fn axis_index_to_range(
+    selector: AxisIndex,
+    axis_len: usize,
+    axis_name: &str,
+) -> Option<(usize, usize, usize)> {
+    match selector {
+        AxisIndex::Index(idx) => {
+            assert!(
+                idx < axis_len,
+                "{} index {} out of bounds for axis with length {}",
+                axis_name,
+                idx,
+                axis_len
+            );
+            Some((idx, idx + 1, 1))
+        }
+        AxisIndex::Slice(start, stop) => {
+            assert!(
+                start <= stop,
+                "{} slice start {} must be less than or equal to stop {}",
+                axis_name,
+                start,
+                stop
+            );
+            assert!(
+                stop <= axis_len,
+                "{} slice stop {} out of bounds for axis with length {}",
+                axis_name,
+                stop,
+                axis_len
+            );
+            Some((start, stop, 1))
+        }
+        AxisIndex::All => None,
+    }
+}
+
+fn axis_index_drops_axis(selector: AxisIndex) -> bool {
+    matches!(selector, AxisIndex::Index(_))
 }
 
 /// Cumulative sum along an axis.
@@ -372,39 +399,76 @@ mod tests {
         let x = variable(10);
         assert_eq!(index(&x, 1).shape(), Shape::scalar());
         assert_eq!(slice(&x, 0, 5).shape(), Shape::vector(5));
+        assert_eq!(
+            select(&x, AxisIndex::Slice(1, 3), AxisIndex::All).shape(),
+            Shape::vector(2)
+        );
 
         let x = variable((10, 10));
         assert_eq!(index(&x, 1).shape(), Shape::vector(10));
         assert_eq!(slice(&x, 0, 5).shape(), Shape::matrix(5, 10));
         assert_eq!(slice(&x, 1, 2).shape(), Shape::matrix(1, 10));
+        assert_eq!(
+            select(&x, AxisIndex::All, AxisIndex::Index(2)).shape(),
+            Shape::vector(10)
+        );
+        assert_eq!(
+            select(&x, AxisIndex::Index(1), AxisIndex::Index(2)).shape(),
+            Shape::scalar()
+        );
+        assert_eq!(
+            select(&x, AxisIndex::Slice(0, 5), AxisIndex::Slice(1, 3)).shape(),
+            Shape::matrix(5, 2)
+        );
     }
 
     #[test]
-    #[should_panic(expected = "index 10 out of bounds")]
+    #[should_panic(expected = "row index 10 out of bounds")]
     fn test_matrix_index_out_of_bounds_panics() {
         let x = variable((10, 10));
         let _ = index(&x, 10);
     }
 
     #[test]
-    #[should_panic(expected = "slice stop 11 out of bounds")]
+    #[should_panic(expected = "row slice stop 11 out of bounds")]
     fn test_matrix_slice_stop_out_of_bounds_panics() {
         let x = variable((10, 10));
         let _ = slice(&x, 0, 11);
     }
 
     #[test]
-    #[should_panic(expected = "slice start 5 must be less than or equal to stop 3")]
+    #[should_panic(expected = "row slice start 5 must be less than or equal to stop 3")]
     fn test_slice_start_after_stop_panics() {
         let x = variable((10, 10));
         let _ = slice(&x, 5, 3);
     }
 
     #[test]
-    #[should_panic(expected = "cannot index a scalar expression")]
+    #[should_panic(expected = "cannot select from a scalar expression")]
     fn test_scalar_index_panics() {
         let x = variable(());
         let _ = index(&x, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "vector selection only supports AxisIndex::All for columns")]
+    fn test_vector_column_select_panics() {
+        let x = variable(10);
+        let _ = select(&x, AxisIndex::All, AxisIndex::Index(0));
+    }
+
+    #[test]
+    #[should_panic(expected = "column index 10 out of bounds")]
+    fn test_matrix_column_index_out_of_bounds_panics() {
+        let x = variable((10, 10));
+        let _ = select(&x, AxisIndex::All, AxisIndex::Index(10));
+    }
+
+    #[test]
+    #[should_panic(expected = "column slice stop 11 out of bounds")]
+    fn test_matrix_column_slice_stop_out_of_bounds_panics() {
+        let x = variable((10, 10));
+        let _ = select(&x, AxisIndex::All, AxisIndex::Slice(0, 11));
     }
 
     #[test]

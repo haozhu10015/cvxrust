@@ -18,7 +18,7 @@ pub use constant::{
     ones, zeros,
 };
 pub use eval::Evaluable;
-pub use expression::{Array, ConstantData, Expr, ExprId, IndexSpec, VariableData};
+pub use expression::{Array, AxisIndex, ConstantData, Expr, ExprId, IndexSpec, VariableData};
 pub use shape::Shape;
 pub use variable::{
     VariableBuilder, VariableExt, matrix_var, named_variable, nonneg_variable, nonpos_variable,

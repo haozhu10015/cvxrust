@@ -187,6 +187,17 @@ impl ConstantData {
     }
 }
 
+/// Selector for one axis of an indexing operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AxisIndex {
+    /// Select a single index and drop this axis.
+    Index(usize),
+    /// Select a half-open range and preserve this axis.
+    Slice(usize, usize),
+    /// Select the entire axis and preserve it.
+    All,
+}
+
 /// Specification for indexing operations.
 #[derive(Debug, Clone)]
 pub struct IndexSpec {
