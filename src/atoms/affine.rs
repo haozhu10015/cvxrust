@@ -250,6 +250,16 @@ pub fn slice(expr: &Expr, start: usize, stop: usize) -> Expr {
     select(expr, AxisIndex::Slice(start, stop), AxisIndex::All)
 }
 
+/// Index a matrix column.
+pub fn indexc(expr: &Expr, idx: usize) -> Expr {
+    select(expr, AxisIndex::All, AxisIndex::Index(idx))
+}
+
+/// Slice a range of matrix columns.
+pub fn slicec(expr: &Expr, start: usize, stop: usize) -> Expr {
+    select(expr, AxisIndex::All, AxisIndex::Slice(start, stop))
+}
+
 /// Select rows and columns from an expression.
 pub fn select(expr: &Expr, rows: AxisIndex, cols: AxisIndex) -> Expr {
     let shape = expr.shape();
@@ -412,6 +422,8 @@ mod tests {
             select(&x, AxisIndex::All, AxisIndex::Index(2)).shape(),
             Shape::vector(10)
         );
+        assert_eq!(indexc(&x, 2).shape(), Shape::vector(10));
+        assert_eq!(slicec(&x, 1, 3).shape(), Shape::matrix(10, 2));
         assert_eq!(
             select(&x, AxisIndex::Index(1), AxisIndex::Index(2)).shape(),
             Shape::scalar()

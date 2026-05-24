@@ -10,8 +10,8 @@ pub mod nonlinear;
 
 // Re-export affine operations
 pub use affine::{
-    cumsum, diag, dot, flatten, hstack, index, matmul, reshape, select, slice, sum, sum_axis,
-    trace, transpose, vstack,
+    cumsum, diag, dot, flatten, hstack, index, indexc, matmul, reshape, select, slice, slicec, sum,
+    sum_axis, trace, transpose, vstack,
 };
 
 // Re-export nonlinear atoms

@@ -1,4 +1,4 @@
-use cvxrust::atoms::{index, select, slice};
+use cvxrust::atoms::{index, indexc, select, slice, slicec};
 use cvxrust::prelude::*;
 use nalgebra::DMatrix;
 
@@ -72,10 +72,7 @@ fn test_matrix_column_select_constraints_affect_selected_column() {
     let x = variable((3, 4));
 
     let sol = Problem::minimize(sum(&x))
-        .subject_to([
-            x.ge(0.0),
-            select(&x, AxisIndex::All, AxisIndex::Index(2)).ge(3.0),
-        ])
+        .subject_to([x.ge(0.0), indexc(&x, 2).ge(3.0)])
         .solve()
         .expect("problem should solve");
 
@@ -85,6 +82,28 @@ fn test_matrix_column_select_constraints_affect_selected_column() {
             assert!(m[(row, 0)].abs() < TOL);
             assert!(m[(row, 1)].abs() < TOL);
             assert!((m[(row, 2)] - 3.0).abs() < TOL);
+            assert!(m[(row, 3)].abs() < TOL);
+        }
+    } else {
+        panic!("expected dense matrix solution");
+    }
+}
+
+#[test]
+fn test_matrix_column_slice_alias_constraints_affect_selected_columns() {
+    let x = variable((3, 4));
+
+    let sol = Problem::minimize(sum(&x))
+        .subject_to([x.ge(0.0), slicec(&x, 1, 3).ge(6.0)])
+        .solve()
+        .expect("problem should solve");
+
+    let vals = x.value(&sol);
+    if let Array::Dense(m) = vals {
+        for row in 0..3 {
+            assert!(m[(row, 0)].abs() < TOL);
+            assert!((m[(row, 1)] - 6.0).abs() < TOL);
+            assert!((m[(row, 2)] - 6.0).abs() < TOL);
             assert!(m[(row, 3)].abs() < TOL);
         }
     } else {

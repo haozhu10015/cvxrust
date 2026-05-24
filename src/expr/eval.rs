@@ -548,7 +548,7 @@ fn eval_diag(a: Array) -> Array {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::atoms::{index, select, slice};
+    use crate::atoms::{index, indexc, select, slice, slicec};
     use crate::expr::{constant, variable};
     use crate::prelude::*;
     use std::collections::HashMap;
@@ -698,7 +698,7 @@ mod tests {
             ],
         ));
         let (_, ctx) = make_var_scalar(0.0);
-        let value = select(&x, AxisIndex::All, AxisIndex::Index(2)).value(&ctx);
+        let value = indexc(&x, 2).value(&ctx);
 
         if let Array::Dense(m) = value {
             assert_eq!(m.nrows(), 3);
@@ -745,6 +745,32 @@ mod tests {
             assert_eq!(m[(1, 0)], 6.0);
             assert_eq!(m[(0, 1)], 3.0);
             assert_eq!(m[(1, 1)], 7.0);
+        } else {
+            panic!("expected dense matrix");
+        }
+    }
+
+    #[test]
+    fn test_eval_matrix_column_slice_alias() {
+        let x = constant_dmatrix(DMatrix::from_row_slice(
+            3,
+            4,
+            &[
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ],
+        ));
+        let (_, ctx) = make_var_scalar(0.0);
+        let value = slicec(&x, 1, 3).value(&ctx);
+
+        if let Array::Dense(m) = value {
+            assert_eq!(m.nrows(), 3);
+            assert_eq!(m.ncols(), 2);
+            assert_eq!(m[(0, 0)], 2.0);
+            assert_eq!(m[(1, 0)], 6.0);
+            assert_eq!(m[(2, 0)], 10.0);
+            assert_eq!(m[(0, 1)], 3.0);
+            assert_eq!(m[(1, 1)], 7.0);
+            assert_eq!(m[(2, 1)], 11.0);
         } else {
             panic!("expected dense matrix");
         }
