@@ -79,16 +79,17 @@ pub mod sparse;
 pub mod prelude {
     // Expression types
     pub use crate::expr::{
-        Array, Evaluable, Expr, ExprId, IntoConstant, Shape, VariableBuilder, VariableExt,
-        constant, constant_dmatrix, constant_matrix, constant_sparse, constant_vec, eye, ones,
-        variable, zeros,
+        Array, AxisIndex, Evaluable, Expr, ExprId, IntoConstant, Shape, VariableBuilder,
+        VariableExt, constant, constant_dmatrix, constant_matrix, constant_sparse, constant_vec,
+        eye, ones, variable, zeros,
     };
 
     // Atoms
     pub use crate::atoms::{
-        abs, cumsum, diag, dot, entropy, exp, flatten, hstack, log, matmul, max2, maximum, min2,
-        minimum, neg_part, norm, norm_inf, norm1, norm2, pos, power, quad_form, quad_over_lin,
-        reshape, sqrt, sum, sum_axis, sum_squares, trace, transpose, try_norm, vstack,
+        abs, cumsum, diag, dot, entropy, exp, flatten, hstack, indexc, log, matmul, max2, maximum,
+        min2, minimum, neg_part, norm, norm_inf, norm1, norm2, pos, power, quad_form,
+        quad_over_lin, reshape, select, slicec, sqrt, sum, sum_axis, sum_squares, trace, transpose,
+        try_norm, vstack,
     };
 
     // Constraints
