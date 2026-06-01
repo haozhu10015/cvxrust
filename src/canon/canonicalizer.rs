@@ -1161,6 +1161,15 @@ impl CanonContext {
             return CanonExpr::Linear(cx);
         }
 
+        if p.abs() < 1e-10 {
+            // x^0 = 1 elementwise.
+            return CanonExpr::Linear(LinExpr::constant(DMatrix::from_element(
+                cx.shape.rows(),
+                cx.shape.cols(),
+                1.0,
+            )));
+        }
+
         // Create auxiliary variable t for the result
         let (t_var_id, t) = self.new_nonneg_aux_var(cx.shape.clone());
         let _ = t_var_id;

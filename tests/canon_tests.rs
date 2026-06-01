@@ -174,6 +174,30 @@ fn test_quad_over_lin_objective_variable_denominator() {
 }
 
 #[test]
+fn test_power_zero_is_constant_one() {
+    let x = variable(());
+
+    let sol = Problem::minimize(power(&x, 0.0))
+        .subject_to([x.ge(1.0)])
+        .solve()
+        .expect("problem should solve");
+
+    assert!((sol.value.unwrap() - 1.0).abs() < TOL);
+}
+
+#[test]
+fn test_power_zero_vector_is_constant_one_elementwise() {
+    let x = variable(3);
+
+    let sol = Problem::minimize(sum(&power(&x, 0.0)))
+        .subject_to([x.ge(1.0)])
+        .solve()
+        .expect("problem should solve");
+
+    assert!((sol.value.unwrap() - 3.0).abs() < TOL);
+}
+
+#[test]
 fn test_power_two_is_elementwise() {
     let x = variable(2);
 
