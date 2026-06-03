@@ -292,13 +292,23 @@ impl CanonContext {
         // Element-wise multiplication: diag(c) @ lin
         // For flat representation, this scales each row of coefficients by corresponding c value
         let c_flat: Vec<f64> = c.iter().copied().collect();
-        let size = c_flat.len();
+        let size = lin.shape.size();
+        assert_eq!(
+            c_flat.len(),
+            size,
+            "elementwise multiplication requires matching sizes after broadcasting"
+        );
 
         let mut new_coeffs = std::collections::HashMap::new();
         for (var_id, coeff) in &lin.coeffs {
             let coeff_dense = csc_to_dense(coeff);
+            assert_eq!(
+                coeff_dense.nrows(),
+                size,
+                "linear coefficient rows must match expression size"
+            );
             let mut new_coeff = DMatrix::zeros(size, coeff_dense.ncols());
-            for i in 0..size.min(coeff_dense.nrows()) {
+            for i in 0..size {
                 for j in 0..coeff_dense.ncols() {
                     new_coeff[(i, j)] = c_flat[i] * coeff_dense[(i, j)];
                 }
@@ -306,7 +316,8 @@ impl CanonContext {
             new_coeffs.insert(*var_id, dense_to_csc(&new_coeff));
         }
 
-        let new_const = c.component_mul(&lin.constant);
+        let c_shaped = DMatrix::from_vec(lin.shape.rows(), lin.shape.cols(), c_flat);
+        let new_const = c_shaped.component_mul(&lin.constant);
 
         LinExpr {
             coeffs: new_coeffs,
