@@ -126,6 +126,7 @@ impl Problem {
                 Self::collect_variable_shapes(b, shapes);
             }
             Expr::Neg(a)
+            | Expr::Promote(a, _)
             | Expr::Sum(a, _)
             | Expr::Reshape(a, _)
             | Expr::Index(a, _)

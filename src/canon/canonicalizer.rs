@@ -175,6 +175,7 @@ impl CanonContext {
                 }
             }
             Expr::Mul(a, b) => self.canonicalize_mul(a, b, for_objective),
+            Expr::Promote(a, shape) => self.canonicalize_promote(a, shape),
             Expr::MatMul(a, b) => self.canonicalize_matmul(a, b),
             Expr::Sum(a, axis) => self.canonicalize_sum(a, *axis),
             Expr::Reshape(a, shape) => self.canonicalize_reshape(a, shape),
@@ -314,6 +315,30 @@ impl CanonContext {
         }
     }
 
+    fn canonicalize_promote(&mut self, expr: &Expr, target_shape: &Shape) -> CanonExpr {
+        let lin = self.canonicalize_expr(expr, false).as_linear().clone();
+        if lin.shape.size() != 1 {
+            return CanonExpr::Linear(lin);
+        }
+
+        let coeffs = lin
+            .coeffs
+            .iter()
+            .map(|(var_id, coeff)| (*var_id, csc_repeat_rows(coeff, target_shape.size())))
+            .collect();
+        let constant = DMatrix::from_element(
+            target_shape.rows(),
+            target_shape.cols(),
+            lin.constant[(0, 0)],
+        );
+
+        CanonExpr::Linear(LinExpr {
+            coeffs,
+            constant,
+            shape: target_shape.clone(),
+        })
+    }
+
     fn canonicalize_matmul(&mut self, a: &Expr, b: &Expr) -> CanonExpr {
         // Check if expressions are constant (no variables, not just Constant variant)
         let a_is_const = a.variables().is_empty();
@@ -385,7 +410,11 @@ impl CanonContext {
         }
 
         let new_const = &a_mat * &b.constant;
-        let shape = Shape::matrix(new_const.nrows(), new_const.ncols());
+        let shape = if new_const.ncols() == 1 && new_const.nrows() > 1 {
+            Shape::vector(new_const.nrows())
+        } else {
+            Shape::matrix(new_const.nrows(), new_const.ncols())
+        };
 
         LinExpr {
             coeffs: new_coeffs,
@@ -435,7 +464,11 @@ impl CanonContext {
         }
 
         let new_const = &a.constant * &b_mat;
-        let shape = Shape::matrix(new_const.nrows(), new_const.ncols());
+        let shape = if new_const.ncols() == 1 && new_const.nrows() > 1 {
+            Shape::vector(new_const.nrows())
+        } else {
+            Shape::matrix(new_const.nrows(), new_const.ncols())
+        };
 
         LinExpr {
             coeffs: new_coeffs,

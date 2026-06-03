@@ -52,6 +52,14 @@ impl Shape {
         self.0.is_empty()
     }
 
+    /// Check if this shape has exactly one element.
+    ///
+    /// This is used for CVXPY-style scalar promotion in broadcasting while
+    /// preserving `is_scalar()` as the strict `()` shape check.
+    pub fn is_scalar_like(&self) -> bool {
+        self.size() == 1
+    }
+
     /// Check if this is a vector.
     pub fn is_vector(&self) -> bool {
         self.0.len() == 1
@@ -126,6 +134,8 @@ impl Shape {
     pub fn matmul(&self, other: &Shape) -> Option<Shape> {
         // Handle various cases
         match (self.ndim(), other.ndim()) {
+            // matrix @ scalar, treating scalar as a 1x1 column
+            (2, 0) if self.cols() == 1 => Some(Shape::vector(self.rows())),
             // matrix @ matrix
             (2, 2) if self.cols() == other.rows() => Some(Shape::matrix(self.rows(), other.cols())),
             // matrix @ vector
