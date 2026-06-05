@@ -354,33 +354,44 @@ impl CanonContext {
         // Check if expressions are constant (no variables, not just Constant variant)
         let a_is_const = a.variables().is_empty();
         let b_is_const = b.variables().is_empty();
+        let result_shape = a.shape().matmul(&b.shape()).unwrap_or_else(|| {
+            panic!(
+                "cannot matrix-multiply shapes {} and {}",
+                a.shape(),
+                b.shape()
+            )
+        });
 
         if a_is_const && !b_is_const {
             // A is constant expression, B has variables: A @ B is affine in B
             let ca = self.canonicalize_expr(a, false).as_linear().clone();
             let cb = self.canonicalize_expr(b, false).as_linear().clone();
             let a_arr = Array::Dense(ca.constant);
-            return CanonExpr::Linear(self.matmul_const_lin(&a_arr, &cb));
+            return CanonExpr::Linear(self.matmul_const_lin(&a_arr, &cb, result_shape));
         }
         if b_is_const && !a_is_const {
             // B is constant expression, A has variables: A @ B is affine in A
             let ca = self.canonicalize_expr(a, false).as_linear().clone();
             let cb = self.canonicalize_expr(b, false).as_linear().clone();
             let b_arr = Array::Dense(cb.constant);
-            return CanonExpr::Linear(self.lin_matmul_const(&ca, &b_arr));
+            return CanonExpr::Linear(self.lin_matmul_const(&ca, &b_arr, result_shape));
         }
         if a_is_const && b_is_const {
             // Both constant - evaluate and return constant
             let ca = self.canonicalize_expr(a, false).as_linear().clone();
             let cb = self.canonicalize_expr(b, false).as_linear().clone();
             let result = &ca.constant * &cb.constant;
-            return CanonExpr::Linear(LinExpr::constant(result));
+            return CanonExpr::Linear(LinExpr {
+                coeffs: std::collections::HashMap::new(),
+                constant: result,
+                shape: result_shape,
+            });
         }
         // Both have variables - not DCP, return simplified
         self.canonicalize_expr(a, false)
     }
 
-    fn matmul_const_lin(&self, a: &Array, b: &LinExpr) -> LinExpr {
+    fn matmul_const_lin(&self, a: &Array, b: &LinExpr, shape: Shape) -> LinExpr {
         // For matrix expression A @ E where E has shape (m, n):
         // vec(A @ E) = (I_n ⊗ A) @ vec(E)
         // So for coefficient C: new_C = (I_n ⊗ A) @ C
@@ -421,11 +432,6 @@ impl CanonContext {
         }
 
         let new_const = &a_mat * &b.constant;
-        let shape = if new_const.ncols() == 1 && new_const.nrows() > 1 {
-            Shape::vector(new_const.nrows())
-        } else {
-            Shape::matrix(new_const.nrows(), new_const.ncols())
-        };
 
         LinExpr {
             coeffs: new_coeffs,
@@ -434,7 +440,7 @@ impl CanonContext {
         }
     }
 
-    fn lin_matmul_const(&self, a: &LinExpr, b: &Array) -> LinExpr {
+    fn lin_matmul_const(&self, a: &LinExpr, b: &Array, shape: Shape) -> LinExpr {
         // For matrix expression E @ B where E has shape (m, n):
         // vec(E @ B) = (B' ⊗ I_m) @ vec(E)
         // So for coefficient C: new_C = (B' ⊗ I_m) @ C
@@ -475,11 +481,6 @@ impl CanonContext {
         }
 
         let new_const = &a.constant * &b_mat;
-        let shape = if new_const.ncols() == 1 && new_const.nrows() > 1 {
-            Shape::vector(new_const.nrows())
-        } else {
-            Shape::matrix(new_const.nrows(), new_const.ncols())
-        };
 
         LinExpr {
             coeffs: new_coeffs,

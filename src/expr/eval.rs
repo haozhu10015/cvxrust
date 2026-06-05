@@ -728,12 +728,12 @@ mod tests {
     }
 
     #[test]
-    fn test_eval_incompatible_broadcast_still_errors() {
+    #[should_panic(expected = "cannot broadcast shapes (2, 3) and (3, 2)")]
+    fn test_eval_incompatible_broadcast_panics_at_construction() {
         let a = constant_dmatrix(DMatrix::zeros(2, 3));
         let b = constant_dmatrix(DMatrix::zeros(3, 2));
-        let (_, ctx) = make_var_scalar(0.0);
 
-        assert!((&a + &b).eval(&ctx).is_err());
+        let _ = &a + &b;
     }
 
     #[test]

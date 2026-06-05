@@ -195,26 +195,35 @@ fn mul_exprs(lhs: Expr, rhs: Expr) -> Expr {
 pub(crate) fn broadcast_exprs(lhs: Expr, rhs: Expr) -> (Expr, Expr) {
     let lhs_shape = lhs.shape();
     let rhs_shape = rhs.shape();
+    let target_shape = lhs_shape
+        .broadcast(&rhs_shape)
+        .unwrap_or_else(|| panic!("cannot broadcast shapes {} and {}", lhs_shape, rhs_shape));
 
-    if lhs_shape == rhs_shape {
+    if lhs_shape == target_shape && rhs_shape == target_shape {
+        return (lhs, rhs);
+    }
+    if lhs_shape.rows() == rhs_shape.rows() && lhs_shape.cols() == rhs_shape.cols() {
         return (lhs, rhs);
     }
 
-    if lhs_shape.is_scalar_like() && !rhs_shape.is_scalar_like() {
-        return (promote(&lhs, rhs_shape), rhs);
-    }
-    if rhs_shape.is_scalar_like() && !lhs_shape.is_scalar_like() {
-        return (lhs, promote(&rhs, lhs_shape));
-    }
-
-    if let Some(lhs_broadcasted) = broadcast_2d_to(lhs.clone(), &lhs_shape, &rhs_shape) {
-        return (lhs_broadcasted, rhs);
-    }
-    if let Some(rhs_broadcasted) = broadcast_2d_to(rhs.clone(), &rhs_shape, &lhs_shape) {
-        return (lhs, rhs_broadcasted);
-    }
+    let lhs = broadcast_to(lhs, &lhs_shape, &target_shape)
+        .unwrap_or_else(|| panic!("cannot broadcast shape {} to {}", lhs_shape, target_shape));
+    let rhs = broadcast_to(rhs, &rhs_shape, &target_shape)
+        .unwrap_or_else(|| panic!("cannot broadcast shape {} to {}", rhs_shape, target_shape));
 
     (lhs, rhs)
+}
+
+fn broadcast_to(expr: Expr, expr_shape: &Shape, target_shape: &Shape) -> Option<Expr> {
+    if expr_shape == target_shape {
+        return Some(expr);
+    }
+
+    if expr_shape.is_scalar_like() {
+        return Some(promote(&expr, target_shape.clone()));
+    }
+
+    broadcast_2d_to(expr, expr_shape, target_shape)
 }
 
 fn broadcast_2d_to(expr: Expr, expr_shape: &Shape, target_shape: &Shape) -> Option<Expr> {
@@ -521,6 +530,24 @@ mod tests {
     }
 
     #[test]
+    fn test_mutual_row_and_column_broadcast_shape() {
+        let row = variable((1, 3));
+        let col = variable((2, 1));
+
+        assert_eq!((&row + &col).shape(), Shape::matrix(2, 3));
+        assert_eq!((&col * &row).shape(), Shape::matrix(2, 3));
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot broadcast shapes (2, 2) and (3, 3)")]
+    fn test_incompatible_broadcast_panics_at_construction() {
+        let c = constant_matrix(vec![1.0, 2.0, 3.0, 4.0], 2, 2);
+        let x = variable((3, 3));
+
+        let _ = c * x;
+    }
+
+    #[test]
     fn test_transpose() {
         let x = variable((3, 4));
         let t = transpose(&x);
@@ -533,6 +560,14 @@ mod tests {
         let x = variable(4);
         let b = matmul(&a, &x);
         assert_eq!(b.shape(), Shape::vector(3));
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot matrix-multiply shapes (3, 4) and (3,)")]
+    fn test_invalid_matmul_shape_panics() {
+        let a = variable((3, 4));
+        let x = variable(3);
+        let _ = matmul(&a, &x).shape();
     }
 
     #[test]

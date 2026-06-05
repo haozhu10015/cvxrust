@@ -344,9 +344,13 @@ impl Expr {
             Expr::Constant(c) => c.shape(),
 
             // Affine
-            Expr::Add(a, b) => broadcast_binary_shape(&a.shape(), &b.shape()),
+            Expr::Add(a, b) => a.shape().broadcast(&b.shape()).unwrap_or_else(|| {
+                panic!("cannot broadcast shapes {} and {}", a.shape(), b.shape())
+            }),
             Expr::Neg(a) => a.shape(),
-            Expr::Mul(a, b) => broadcast_binary_shape(&a.shape(), &b.shape()),
+            Expr::Mul(a, b) => a.shape().broadcast(&b.shape()).unwrap_or_else(|| {
+                panic!("cannot broadcast shapes {} and {}", a.shape(), b.shape())
+            }),
             Expr::Promote(_, shape) => shape.clone(),
             Expr::Sum(a, axis) => {
                 if axis.is_some() {
@@ -383,7 +387,13 @@ impl Expr {
             }
             Expr::Transpose(a) => a.shape().transpose(),
             Expr::Trace(_) => Shape::scalar(),
-            Expr::MatMul(a, b) => a.shape().matmul(&b.shape()).unwrap_or_else(Shape::scalar),
+            Expr::MatMul(a, b) => a.shape().matmul(&b.shape()).unwrap_or_else(|| {
+                panic!(
+                    "cannot matrix-multiply shapes {} and {}",
+                    a.shape(),
+                    b.shape()
+                )
+            }),
 
             // Nonlinear - norms return scalars
             Expr::Norm1(_) | Expr::Norm2(_) | Expr::NormInf(_) => Shape::scalar(),
@@ -520,46 +530,6 @@ impl std::ops::Index<(usize, usize)> for Array {
             Array::Sparse(_) => panic!("use Array::Dense for indexing"),
         }
     }
-}
-
-fn broadcast_binary_shape(lhs: &Shape, rhs: &Shape) -> Shape {
-    if lhs == rhs {
-        return lhs.clone();
-    }
-
-    if lhs.is_scalar_like() && !rhs.is_scalar_like() {
-        return rhs.clone();
-    }
-    if rhs.is_scalar_like() && !lhs.is_scalar_like() {
-        return lhs.clone();
-    }
-
-    if lhs.rows() == rhs.rows() && lhs.cols() == rhs.cols() {
-        if lhs.is_vector() {
-            return lhs.clone();
-        }
-        if rhs.is_vector() {
-            return rhs.clone();
-        }
-        return Shape::matrix(lhs.rows(), lhs.cols());
-    }
-
-    if lhs.is_matrix() && rhs.is_matrix() {
-        if lhs.rows() == 1 && lhs.cols() == rhs.cols() {
-            return rhs.clone();
-        }
-        if rhs.rows() == 1 && rhs.cols() == lhs.cols() {
-            return lhs.clone();
-        }
-        if lhs.cols() == 1 && lhs.rows() == rhs.rows() {
-            return rhs.clone();
-        }
-        if rhs.cols() == 1 && rhs.rows() == lhs.rows() {
-            return lhs.clone();
-        }
-    }
-
-    Shape::scalar()
 }
 
 // Convenient From implementations for automatic conversion
