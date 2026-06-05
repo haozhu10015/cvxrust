@@ -228,23 +228,19 @@ impl CanonContext {
         let b_is_const = b.variables().is_empty();
 
         // Handle scalar multiplication first (most common case)
-        if let Some(arr) = a.constant_value() {
-            if let Some(scalar) = arr.as_scalar() {
-                let cb = self.canonicalize_expr(b, for_objective);
-                return match cb {
-                    CanonExpr::Linear(l) => CanonExpr::Linear(l.scale(scalar)),
-                    CanonExpr::Quadratic(q) => CanonExpr::Quadratic(q.scale(scalar)),
-                };
-            }
+        if let Some(scalar) = scalar_constant_value(a) {
+            let cb = self.canonicalize_expr(b, for_objective);
+            return match cb {
+                CanonExpr::Linear(l) => CanonExpr::Linear(l.scale(scalar)),
+                CanonExpr::Quadratic(q) => CanonExpr::Quadratic(q.scale(scalar)),
+            };
         }
-        if let Some(arr) = b.constant_value() {
-            if let Some(scalar) = arr.as_scalar() {
-                let ca = self.canonicalize_expr(a, for_objective);
-                return match ca {
-                    CanonExpr::Linear(l) => CanonExpr::Linear(l.scale(scalar)),
-                    CanonExpr::Quadratic(q) => CanonExpr::Quadratic(q.scale(scalar)),
-                };
-            }
+        if let Some(scalar) = scalar_constant_value(b) {
+            let ca = self.canonicalize_expr(a, for_objective);
+            return match ca {
+                CanonExpr::Linear(l) => CanonExpr::Linear(l.scale(scalar)),
+                CanonExpr::Quadratic(q) => CanonExpr::Quadratic(q.scale(scalar)),
+            };
         }
 
         // Handle constant expression that evaluates to scalar
@@ -1457,6 +1453,14 @@ fn stack_csc_vertical(a: &CscMatrix<f64>, b: &CscMatrix<f64>) -> CscMatrix<f64> 
 
 fn repeat_rows_csc(m: &CscMatrix<f64>, times: usize) -> CscMatrix<f64> {
     csc_repeat_rows(m, times)
+}
+
+fn scalar_constant_value(expr: &Expr) -> Option<f64> {
+    match expr {
+        Expr::Constant(c) => c.value.as_scalar(),
+        Expr::Promote(a, _) => scalar_constant_value(a),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
