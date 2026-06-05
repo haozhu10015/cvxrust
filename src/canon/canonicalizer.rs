@@ -175,6 +175,7 @@ impl CanonContext {
                 }
             }
             Expr::Mul(a, b) => self.canonicalize_mul(a, b, for_objective),
+            Expr::Promote(a, shape) => self.canonicalize_promote(a, shape),
             Expr::MatMul(a, b) => self.canonicalize_matmul(a, b),
             Expr::Sum(a, axis) => self.canonicalize_sum(a, *axis),
             Expr::Reshape(a, shape) => self.canonicalize_reshape(a, shape),
@@ -227,23 +228,19 @@ impl CanonContext {
         let b_is_const = b.variables().is_empty();
 
         // Handle scalar multiplication first (most common case)
-        if let Some(arr) = a.constant_value() {
-            if let Some(scalar) = arr.as_scalar() {
-                let cb = self.canonicalize_expr(b, for_objective);
-                return match cb {
-                    CanonExpr::Linear(l) => CanonExpr::Linear(l.scale(scalar)),
-                    CanonExpr::Quadratic(q) => CanonExpr::Quadratic(q.scale(scalar)),
-                };
-            }
+        if let Some(scalar) = scalar_constant_value(a) {
+            let cb = self.canonicalize_expr(b, for_objective);
+            return match cb {
+                CanonExpr::Linear(l) => CanonExpr::Linear(l.scale(scalar)),
+                CanonExpr::Quadratic(q) => CanonExpr::Quadratic(q.scale(scalar)),
+            };
         }
-        if let Some(arr) = b.constant_value() {
-            if let Some(scalar) = arr.as_scalar() {
-                let ca = self.canonicalize_expr(a, for_objective);
-                return match ca {
-                    CanonExpr::Linear(l) => CanonExpr::Linear(l.scale(scalar)),
-                    CanonExpr::Quadratic(q) => CanonExpr::Quadratic(q.scale(scalar)),
-                };
-            }
+        if let Some(scalar) = scalar_constant_value(b) {
+            let ca = self.canonicalize_expr(a, for_objective);
+            return match ca {
+                CanonExpr::Linear(l) => CanonExpr::Linear(l.scale(scalar)),
+                CanonExpr::Quadratic(q) => CanonExpr::Quadratic(q.scale(scalar)),
+            };
         }
 
         // Handle constant expression that evaluates to scalar
@@ -283,21 +280,30 @@ impl CanonContext {
             return CanonExpr::Linear(LinExpr::constant(result));
         }
 
-        // Both have variables - not DCP
-        self.canonicalize_expr(a, false)
+        panic!("cannot canonicalize product of two non-constant expressions")
     }
 
     fn elementwise_mul_const_lin(&self, c: &DMatrix<f64>, lin: &LinExpr) -> LinExpr {
         // Element-wise multiplication: diag(c) @ lin
         // For flat representation, this scales each row of coefficients by corresponding c value
         let c_flat: Vec<f64> = c.iter().copied().collect();
-        let size = c_flat.len();
+        let size = lin.shape.size();
+        assert_eq!(
+            c_flat.len(),
+            size,
+            "elementwise multiplication requires matching sizes after broadcasting"
+        );
 
         let mut new_coeffs = std::collections::HashMap::new();
         for (var_id, coeff) in &lin.coeffs {
             let coeff_dense = csc_to_dense(coeff);
+            assert_eq!(
+                coeff_dense.nrows(),
+                size,
+                "linear coefficient rows must match expression size"
+            );
             let mut new_coeff = DMatrix::zeros(size, coeff_dense.ncols());
-            for i in 0..size.min(coeff_dense.nrows()) {
+            for i in 0..size {
                 for j in 0..coeff_dense.ncols() {
                     new_coeff[(i, j)] = c_flat[i] * coeff_dense[(i, j)];
                 }
@@ -305,7 +311,8 @@ impl CanonContext {
             new_coeffs.insert(*var_id, dense_to_csc(&new_coeff));
         }
 
-        let new_const = c.component_mul(&lin.constant);
+        let c_shaped = DMatrix::from_vec(lin.shape.rows(), lin.shape.cols(), c_flat);
+        let new_const = c_shaped.component_mul(&lin.constant);
 
         LinExpr {
             coeffs: new_coeffs,
@@ -314,37 +321,71 @@ impl CanonContext {
         }
     }
 
+    fn canonicalize_promote(&mut self, expr: &Expr, target_shape: &Shape) -> CanonExpr {
+        let lin = self.canonicalize_expr(expr, false).as_linear().clone();
+        if lin.shape.size() != 1 {
+            return CanonExpr::Linear(lin);
+        }
+
+        let coeffs = lin
+            .coeffs
+            .iter()
+            .map(|(var_id, coeff)| (*var_id, csc_repeat_rows(coeff, target_shape.size())))
+            .collect();
+        let constant = DMatrix::from_element(
+            target_shape.rows(),
+            target_shape.cols(),
+            lin.constant[(0, 0)],
+        );
+
+        CanonExpr::Linear(LinExpr {
+            coeffs,
+            constant,
+            shape: target_shape.clone(),
+        })
+    }
+
     fn canonicalize_matmul(&mut self, a: &Expr, b: &Expr) -> CanonExpr {
         // Check if expressions are constant (no variables, not just Constant variant)
         let a_is_const = a.variables().is_empty();
         let b_is_const = b.variables().is_empty();
+        let result_shape = a.shape().matmul(&b.shape()).unwrap_or_else(|| {
+            panic!(
+                "cannot matrix-multiply shapes {} and {}",
+                a.shape(),
+                b.shape()
+            )
+        });
 
         if a_is_const && !b_is_const {
             // A is constant expression, B has variables: A @ B is affine in B
             let ca = self.canonicalize_expr(a, false).as_linear().clone();
             let cb = self.canonicalize_expr(b, false).as_linear().clone();
             let a_arr = Array::Dense(ca.constant);
-            return CanonExpr::Linear(self.matmul_const_lin(&a_arr, &cb));
+            return CanonExpr::Linear(self.matmul_const_lin(&a_arr, &cb, result_shape));
         }
         if b_is_const && !a_is_const {
             // B is constant expression, A has variables: A @ B is affine in A
             let ca = self.canonicalize_expr(a, false).as_linear().clone();
             let cb = self.canonicalize_expr(b, false).as_linear().clone();
             let b_arr = Array::Dense(cb.constant);
-            return CanonExpr::Linear(self.lin_matmul_const(&ca, &b_arr));
+            return CanonExpr::Linear(self.lin_matmul_const(&ca, &b_arr, result_shape));
         }
         if a_is_const && b_is_const {
             // Both constant - evaluate and return constant
             let ca = self.canonicalize_expr(a, false).as_linear().clone();
             let cb = self.canonicalize_expr(b, false).as_linear().clone();
             let result = &ca.constant * &cb.constant;
-            return CanonExpr::Linear(LinExpr::constant(result));
+            return CanonExpr::Linear(LinExpr {
+                coeffs: std::collections::HashMap::new(),
+                constant: result,
+                shape: result_shape,
+            });
         }
-        // Both have variables - not DCP, return simplified
-        self.canonicalize_expr(a, false)
+        panic!("cannot canonicalize matrix product of two non-constant expressions")
     }
 
-    fn matmul_const_lin(&self, a: &Array, b: &LinExpr) -> LinExpr {
+    fn matmul_const_lin(&self, a: &Array, b: &LinExpr, shape: Shape) -> LinExpr {
         // For matrix expression A @ E where E has shape (m, n):
         // vec(A @ E) = (I_n ⊗ A) @ vec(E)
         // So for coefficient C: new_C = (I_n ⊗ A) @ C
@@ -385,7 +426,6 @@ impl CanonContext {
         }
 
         let new_const = &a_mat * &b.constant;
-        let shape = Shape::matrix(new_const.nrows(), new_const.ncols());
 
         LinExpr {
             coeffs: new_coeffs,
@@ -394,7 +434,7 @@ impl CanonContext {
         }
     }
 
-    fn lin_matmul_const(&self, a: &LinExpr, b: &Array) -> LinExpr {
+    fn lin_matmul_const(&self, a: &LinExpr, b: &Array, shape: Shape) -> LinExpr {
         // For matrix expression E @ B where E has shape (m, n):
         // vec(E @ B) = (B' ⊗ I_m) @ vec(E)
         // So for coefficient C: new_C = (B' ⊗ I_m) @ C
@@ -435,7 +475,6 @@ impl CanonContext {
         }
 
         let new_const = &a.constant * &b_mat;
-        let shape = Shape::matrix(new_const.nrows(), new_const.ncols());
 
         LinExpr {
             coeffs: new_coeffs,
@@ -1414,10 +1453,19 @@ fn repeat_rows_csc(m: &CscMatrix<f64>, times: usize) -> CscMatrix<f64> {
     csc_repeat_rows(m, times)
 }
 
+fn scalar_constant_value(expr: &Expr) -> Option<f64> {
+    match expr {
+        Expr::Constant(c) => c.value.as_scalar(),
+        Expr::Promote(a, _) => scalar_constant_value(a),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::expr::variable;
+    use crate::atoms::{matmul, promote};
+    use crate::expr::{constant, constant_matrix, variable};
 
     #[test]
     fn test_canonicalize_variable() {
@@ -1444,5 +1492,63 @@ mod tests {
         let result = canonicalize(&s, true);
         // For objective, should produce quadratic or SOC
         assert!(matches!(result.expr, CanonExpr::Quadratic(_)) || !result.constraints.is_empty());
+    }
+
+    #[test]
+    fn test_canonicalize_matmul_preserves_vector_result_shape() {
+        let a = constant_matrix(vec![1.0, 3.0, 5.0, 2.0, 4.0, 6.0], 2, 3);
+        let x = variable(3);
+        let result = canonicalize(&matmul(&a, &x), false);
+
+        assert_eq!(result.expr.as_linear().shape, Shape::vector(2));
+    }
+
+    #[test]
+    fn test_canonicalize_matmul_preserves_column_matrix_result_shape() {
+        let a = constant_matrix(vec![1.0, 3.0, 5.0, 2.0, 4.0, 6.0], 2, 3);
+        let x = variable((3, 1));
+        let result = canonicalize(&matmul(&a, &x), false);
+
+        assert_eq!(result.expr.as_linear().shape, Shape::matrix(2, 1));
+    }
+
+    #[test]
+    fn test_canonicalize_mul_sees_promoted_scalar_constant_privately() {
+        let x = variable((2, 2));
+        let x_id = x.variable_id().unwrap();
+        let promoted = promote(&constant(3.0), (2, 2));
+        assert!(promoted.constant_value().is_none());
+
+        let result = canonicalize(&(promoted * x), false);
+        let lin = result.expr.as_linear();
+        let coeff = csc_to_dense(&lin.coeffs[&x_id]);
+
+        assert_eq!(lin.shape, Shape::matrix(2, 2));
+        assert_eq!(coeff, DMatrix::identity(4, 4) * 3.0);
+        assert!(lin.constant.iter().all(|v| v.abs() < 1e-10));
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot canonicalize product of two non-constant expressions")]
+    fn test_canonicalize_variable_product_panics() {
+        let x = variable(2);
+        let y = variable(2);
+        let _ = canonicalize(&(&x * &y), false);
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot matrix-multiply shapes (2, 3) and (2,)")]
+    fn test_canonicalize_invalid_matmul_shape_panics() {
+        let a = constant_matrix(vec![1.0, 3.0, 5.0, 2.0, 4.0, 6.0], 2, 3);
+        let x = variable(2);
+        let _ = canonicalize(&Expr::MatMul(Arc::new(a), Arc::new(x)), false);
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot canonicalize matrix product of two non-constant expressions")]
+    fn test_canonicalize_variable_matmul_panics() {
+        let x = variable((2, 2));
+        let y = variable((2, 2));
+        let _ = canonicalize(&matmul(&x, &y), false);
     }
 }

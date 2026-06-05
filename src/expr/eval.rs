@@ -101,6 +101,7 @@ impl Expr {
                 let bv = b.eval(ctx)?;
                 eval_mul(av, bv)
             }
+            Expr::Promote(a, shape) => eval_promote(a.eval(ctx)?, shape),
             Expr::Sum(a, axis) => eval_sum(a.eval(ctx)?, *axis),
             Expr::Reshape(a, shape) => eval_reshape(a.eval(ctx)?, shape),
             Expr::Index(a, spec) => eval_index(a.eval(ctx)?, spec),
@@ -221,6 +222,17 @@ fn eval_mul(a: Array, b: Array) -> crate::Result<Array> {
             Ok(Array::Dense(am.component_mul(&bm)))
         }
     }
+}
+
+fn eval_promote(a: Array, shape: &Shape) -> crate::Result<Array> {
+    let scalar = a.as_scalar().ok_or_else(|| {
+        crate::CvxError::InvalidProblem("Only scalar expressions can be promoted".into())
+    })?;
+    Ok(Array::Dense(DMatrix::from_element(
+        shape.rows(),
+        shape.cols(),
+        scalar,
+    )))
 }
 
 fn eval_matmul(a: Array, b: Array) -> crate::Result<Array> {
@@ -614,6 +626,114 @@ mod tests {
         let expr = &x * 2.5;
         let v = expr.value(&ctx).as_scalar().unwrap();
         assert!((v - 10.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_eval_promote_scalar_to_matrix() {
+        let (x, ctx) = make_var_scalar(2.0);
+        let value = promote(&x, (2, 3)).value(&ctx);
+
+        if let Array::Dense(m) = value {
+            assert_eq!(m.nrows(), 2);
+            assert_eq!(m.ncols(), 3);
+            assert!(m.iter().all(|v| (*v - 2.0).abs() < 1e-10));
+        } else {
+            panic!("expected dense promoted value");
+        }
+    }
+
+    #[test]
+    fn test_eval_scalar_like_broadcast_add_sub_mul() {
+        let matrix = constant_dmatrix(DMatrix::from_row_slice(2, 2, &[1.0, 2.0, 3.0, 4.0]));
+        let row_scalar = constant_vec(vec![10.0]);
+        let matrix_scalar = constant_dmatrix(DMatrix::from_row_slice(1, 1, &[2.0]));
+        let (_, ctx) = make_var_scalar(0.0);
+
+        let add_value = (&row_scalar + &matrix).value(&ctx);
+        let sub_value = (&matrix - &row_scalar).value(&ctx);
+        let mul_value = (&matrix_scalar * &matrix).value(&ctx);
+
+        if let (Array::Dense(add), Array::Dense(sub), Array::Dense(mul)) =
+            (add_value, sub_value, mul_value)
+        {
+            assert_eq!(add[(0, 0)], 11.0);
+            assert_eq!(add[(1, 1)], 14.0);
+            assert_eq!(sub[(0, 0)], -9.0);
+            assert_eq!(sub[(1, 1)], -6.0);
+            assert_eq!(mul[(0, 0)], 2.0);
+            assert_eq!(mul[(1, 1)], 8.0);
+        } else {
+            panic!("expected dense broadcast values");
+        }
+    }
+
+    #[test]
+    fn test_eval_row_broadcast_add_sub_mul() {
+        let matrix = constant_dmatrix(DMatrix::from_row_slice(
+            2,
+            3,
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        ));
+        let row = constant_dmatrix(DMatrix::from_row_slice(1, 3, &[10.0, 20.0, 30.0]));
+        let (_, ctx) = make_var_scalar(0.0);
+
+        let add_value = (&row + &matrix).value(&ctx);
+        let sub_value = (&matrix - &row).value(&ctx);
+        let mul_value = (&row * &matrix).value(&ctx);
+
+        if let (Array::Dense(add), Array::Dense(sub), Array::Dense(mul)) =
+            (add_value, sub_value, mul_value)
+        {
+            assert_eq!(add[(0, 0)], 11.0);
+            assert_eq!(add[(1, 0)], 14.0);
+            assert_eq!(add[(0, 2)], 33.0);
+            assert_eq!(sub[(0, 1)], -18.0);
+            assert_eq!(sub[(1, 2)], -24.0);
+            assert_eq!(mul[(0, 0)], 10.0);
+            assert_eq!(mul[(1, 1)], 100.0);
+            assert_eq!(mul[(0, 2)], 90.0);
+        } else {
+            panic!("expected dense row broadcast values");
+        }
+    }
+
+    #[test]
+    fn test_eval_column_broadcast_add_sub_mul() {
+        let matrix = constant_dmatrix(DMatrix::from_row_slice(
+            2,
+            3,
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        ));
+        let col = constant_dmatrix(DMatrix::from_row_slice(2, 1, &[10.0, 20.0]));
+        let (_, ctx) = make_var_scalar(0.0);
+
+        let add_value = (&matrix + &col).value(&ctx);
+        let sub_value = (&matrix - &col).value(&ctx);
+        let mul_value = (&col * &matrix).value(&ctx);
+
+        if let (Array::Dense(add), Array::Dense(sub), Array::Dense(mul)) =
+            (add_value, sub_value, mul_value)
+        {
+            assert_eq!(add[(0, 0)], 11.0);
+            assert_eq!(add[(1, 0)], 24.0);
+            assert_eq!(add[(0, 2)], 13.0);
+            assert_eq!(sub[(0, 1)], -8.0);
+            assert_eq!(sub[(1, 2)], -14.0);
+            assert_eq!(mul[(0, 0)], 10.0);
+            assert_eq!(mul[(1, 1)], 100.0);
+            assert_eq!(mul[(1, 2)], 120.0);
+        } else {
+            panic!("expected dense column broadcast values");
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot broadcast shapes (2, 3) and (3, 2)")]
+    fn test_eval_incompatible_broadcast_panics_at_construction() {
+        let a = constant_dmatrix(DMatrix::zeros(2, 3));
+        let b = constant_dmatrix(DMatrix::zeros(3, 2));
+
+        let _ = &a + &b;
     }
 
     #[test]

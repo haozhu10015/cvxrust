@@ -273,6 +273,47 @@ fn test_sum_axis_one_constraints_are_not_total_sum() {
     }
 }
 
+#[test]
+fn test_scalar_affine_broadcasts_in_vector_constraint() {
+    let x = variable(2);
+    let y = variable(());
+
+    let sol = Problem::maximize(sum(&x))
+        .subject_to([x.le(y.clone()), y.le(1.0), x.ge(0.0)])
+        .solve()
+        .expect("problem should solve");
+
+    assert!((sol.value.unwrap() - 2.0).abs() < TOL);
+    assert!((solution_value(&sol, &y) - 1.0).abs() < TOL);
+
+    if let Array::Dense(x_vals) = x.value(&sol) {
+        assert!((x_vals[(0, 0)] - 1.0).abs() < TOL);
+        assert!((x_vals[(1, 0)] - 1.0).abs() < TOL);
+    } else {
+        panic!("expected dense vector solution");
+    }
+}
+
+#[test]
+fn test_constant_vector_times_scalar_affine_broadcasts() {
+    let y = variable(());
+    let weighted = constant_vec(vec![2.0, 3.0]) * y.clone();
+
+    let sol = Problem::maximize(sum(&weighted))
+        .subject_to([y.eq(1.0)])
+        .solve()
+        .expect("problem should solve");
+
+    assert!((sol.value.unwrap() - 5.0).abs() < TOL);
+
+    if let Array::Dense(weighted_vals) = weighted.value(&sol) {
+        assert!((weighted_vals[(0, 0)] - 2.0).abs() < TOL);
+        assert!((weighted_vals[(1, 0)] - 3.0).abs() < TOL);
+    } else {
+        panic!("expected dense vector value");
+    }
+}
+
 fn solution_value(sol: &Solution, expr: &Expr) -> f64 {
     expr.value(sol).as_scalar().expect("expected scalar")
 }

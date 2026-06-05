@@ -148,6 +148,7 @@ impl Expr {
             Expr::Neg(a) => a.curvature().negate(),
             Expr::Mul(a, b) => mul_curvature(a, b),
             Expr::MatMul(a, b) => matmul_curvature(a, b),
+            Expr::Promote(a, _) => a.curvature(),
             Expr::Sum(a, _) => a.curvature(),
             Expr::Reshape(a, _) => a.curvature(),
             Expr::Index(a, _) => a.curvature(),

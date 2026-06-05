@@ -63,6 +63,46 @@ fn test_value_affine_scale_and_shift() {
 }
 
 #[test]
+fn test_value_promote_public_atom() {
+    let x = variable(());
+    let promoted = promote(&x, (2, 2));
+    let sol = Problem::minimize(x.clone())
+        .subject_to([x.eq(3.0)])
+        .solve()
+        .unwrap();
+
+    let vals = promoted.value(&sol);
+    assert!(approx(vals[(0, 0)], 3.0));
+    assert!(approx(vals[(1, 0)], 3.0));
+    assert!(approx(vals[(0, 1)], 3.0));
+    assert!(approx(vals[(1, 1)], 3.0));
+}
+
+#[test]
+fn test_value_broadcasted_row_and_column_affine_expressions() {
+    let matrix = constant_matrix(vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0], 2, 3);
+    let row = constant_matrix(vec![10.0, 20.0, 30.0], 1, 3);
+    let col = constant_matrix(vec![100.0, 200.0], 2, 1);
+    let x = variable(());
+    let sol = Problem::minimize(x.clone())
+        .subject_to([x.eq(0.0)])
+        .solve()
+        .unwrap();
+
+    let row_sum = (&matrix + &row).value(&sol);
+    assert!(approx(row_sum[(0, 0)], 11.0));
+    assert!(approx(row_sum[(1, 0)], 14.0));
+    assert!(approx(row_sum[(0, 2)], 33.0));
+    assert!(approx(row_sum[(1, 2)], 36.0));
+
+    let col_weighted = (&col * &matrix).value(&sol);
+    assert!(approx(col_weighted[(0, 0)], 100.0));
+    assert!(approx(col_weighted[(1, 0)], 800.0));
+    assert!(approx(col_weighted[(0, 2)], 300.0));
+    assert!(approx(col_weighted[(1, 2)], 1200.0));
+}
+
+#[test]
 fn test_value_matmul_residual() {
     // minimize ||Ax - b||^2  s.t.  x >= 0
     // A = I (2x2), b = [3, 4]  →  x* = [3, 4], residual = [0, 0]

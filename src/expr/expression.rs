@@ -278,6 +278,8 @@ pub enum Expr {
     Neg(Arc<Expr>),
     /// Multiplication: a * b (scalar or matrix)
     Mul(Arc<Expr>, Arc<Expr>),
+    /// Promote a scalar-like expression to a larger shape.
+    Promote(Arc<Expr>, Shape),
     /// Summation with optional axis.
     Sum(Arc<Expr>, Option<usize>),
     /// Reshape to new shape.
@@ -342,15 +344,14 @@ impl Expr {
             Expr::Constant(c) => c.shape(),
 
             // Affine
-            Expr::Add(a, b) => a
-                .shape()
-                .broadcast(&b.shape())
-                .unwrap_or_else(Shape::scalar),
+            Expr::Add(a, b) => a.shape().broadcast(&b.shape()).unwrap_or_else(|| {
+                panic!("cannot broadcast shapes {} and {}", a.shape(), b.shape())
+            }),
             Expr::Neg(a) => a.shape(),
-            Expr::Mul(a, b) => a
-                .shape()
-                .broadcast(&b.shape())
-                .unwrap_or_else(Shape::scalar),
+            Expr::Mul(a, b) => a.shape().broadcast(&b.shape()).unwrap_or_else(|| {
+                panic!("cannot broadcast shapes {} and {}", a.shape(), b.shape())
+            }),
+            Expr::Promote(_, shape) => shape.clone(),
             Expr::Sum(a, axis) => {
                 if axis.is_some() {
                     // Sum along axis reduces that dimension
@@ -386,7 +387,13 @@ impl Expr {
             }
             Expr::Transpose(a) => a.shape().transpose(),
             Expr::Trace(_) => Shape::scalar(),
-            Expr::MatMul(a, b) => a.shape().matmul(&b.shape()).unwrap_or_else(Shape::scalar),
+            Expr::MatMul(a, b) => a.shape().matmul(&b.shape()).unwrap_or_else(|| {
+                panic!(
+                    "cannot matrix-multiply shapes {} and {}",
+                    a.shape(),
+                    b.shape()
+                )
+            }),
 
             // Nonlinear - norms return scalars
             Expr::Norm1(_) | Expr::Norm2(_) | Expr::NormInf(_) => Shape::scalar(),
@@ -465,6 +472,7 @@ impl Expr {
                 b.collect_variables(vars);
             }
             Expr::Neg(a)
+            | Expr::Promote(a, _)
             | Expr::Sum(a, _)
             | Expr::Reshape(a, _)
             | Expr::Index(a, _)

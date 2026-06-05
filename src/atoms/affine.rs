@@ -9,7 +9,7 @@
 use std::ops::{Add, Div, Mul, Neg, Sub};
 use std::sync::Arc;
 
-use crate::expr::{AxisIndex, Expr, IndexSpec, Shape, constant};
+use crate::expr::{AxisIndex, Expr, IndexSpec, Shape, constant, ones};
 
 // ============================================================================
 // Operator overloading for Expr
@@ -35,7 +35,7 @@ impl Add for Expr {
     type Output = Expr;
 
     fn add(self, rhs: Expr) -> Expr {
-        Expr::Add(Arc::new(self), Arc::new(rhs))
+        add_exprs(self, rhs)
     }
 }
 
@@ -43,7 +43,7 @@ impl Add for &Expr {
     type Output = Expr;
 
     fn add(self, rhs: &Expr) -> Expr {
-        Expr::Add(Arc::new(self.clone()), Arc::new(rhs.clone()))
+        add_exprs(self.clone(), rhs.clone())
     }
 }
 
@@ -51,7 +51,7 @@ impl Add<&Expr> for Expr {
     type Output = Expr;
 
     fn add(self, rhs: &Expr) -> Expr {
-        Expr::Add(Arc::new(self), Arc::new(rhs.clone()))
+        add_exprs(self, rhs.clone())
     }
 }
 
@@ -59,7 +59,7 @@ impl Add<Expr> for &Expr {
     type Output = Expr;
 
     fn add(self, rhs: Expr) -> Expr {
-        Expr::Add(Arc::new(self.clone()), Arc::new(rhs))
+        add_exprs(self.clone(), rhs)
     }
 }
 
@@ -67,7 +67,7 @@ impl Sub for Expr {
     type Output = Expr;
 
     fn sub(self, rhs: Expr) -> Expr {
-        Expr::Add(Arc::new(self), Arc::new(Expr::Neg(Arc::new(rhs))))
+        sub_exprs(self, rhs)
     }
 }
 
@@ -75,10 +75,7 @@ impl Sub for &Expr {
     type Output = Expr;
 
     fn sub(self, rhs: &Expr) -> Expr {
-        Expr::Add(
-            Arc::new(self.clone()),
-            Arc::new(Expr::Neg(Arc::new(rhs.clone()))),
-        )
+        sub_exprs(self.clone(), rhs.clone())
     }
 }
 
@@ -86,7 +83,7 @@ impl Sub<&Expr> for Expr {
     type Output = Expr;
 
     fn sub(self, rhs: &Expr) -> Expr {
-        Expr::Add(Arc::new(self), Arc::new(Expr::Neg(Arc::new(rhs.clone()))))
+        sub_exprs(self, rhs.clone())
     }
 }
 
@@ -94,7 +91,7 @@ impl Sub<Expr> for &Expr {
     type Output = Expr;
 
     fn sub(self, rhs: Expr) -> Expr {
-        Expr::Add(Arc::new(self.clone()), Arc::new(Expr::Neg(Arc::new(rhs))))
+        sub_exprs(self.clone(), rhs)
     }
 }
 
@@ -102,7 +99,7 @@ impl Mul for Expr {
     type Output = Expr;
 
     fn mul(self, rhs: Expr) -> Expr {
-        Expr::Mul(Arc::new(self), Arc::new(rhs))
+        mul_exprs(self, rhs)
     }
 }
 
@@ -110,7 +107,7 @@ impl Mul for &Expr {
     type Output = Expr;
 
     fn mul(self, rhs: &Expr) -> Expr {
-        Expr::Mul(Arc::new(self.clone()), Arc::new(rhs.clone()))
+        mul_exprs(self.clone(), rhs.clone())
     }
 }
 
@@ -118,7 +115,7 @@ impl Mul<&Expr> for Expr {
     type Output = Expr;
 
     fn mul(self, rhs: &Expr) -> Expr {
-        Expr::Mul(Arc::new(self), Arc::new(rhs.clone()))
+        mul_exprs(self, rhs.clone())
     }
 }
 
@@ -126,7 +123,7 @@ impl Mul<Expr> for &Expr {
     type Output = Expr;
 
     fn mul(self, rhs: Expr) -> Expr {
-        Expr::Mul(Arc::new(self.clone()), Arc::new(rhs))
+        mul_exprs(self.clone(), rhs)
     }
 }
 
@@ -135,7 +132,7 @@ impl Mul<f64> for Expr {
     type Output = Expr;
 
     fn mul(self, rhs: f64) -> Expr {
-        Expr::Mul(Arc::new(constant(rhs)), Arc::new(self))
+        mul_exprs(constant(rhs), self)
     }
 }
 
@@ -143,7 +140,7 @@ impl Mul<f64> for &Expr {
     type Output = Expr;
 
     fn mul(self, rhs: f64) -> Expr {
-        Expr::Mul(Arc::new(constant(rhs)), Arc::new(self.clone()))
+        mul_exprs(constant(rhs), self.clone())
     }
 }
 
@@ -151,7 +148,7 @@ impl Mul<Expr> for f64 {
     type Output = Expr;
 
     fn mul(self, rhs: Expr) -> Expr {
-        Expr::Mul(Arc::new(constant(self)), Arc::new(rhs))
+        mul_exprs(constant(self), rhs)
     }
 }
 
@@ -159,7 +156,7 @@ impl Mul<&Expr> for f64 {
     type Output = Expr;
 
     fn mul(self, rhs: &Expr) -> Expr {
-        Expr::Mul(Arc::new(constant(self)), Arc::new(rhs.clone()))
+        mul_exprs(constant(self), rhs.clone())
     }
 }
 
@@ -168,7 +165,7 @@ impl Div<f64> for Expr {
     type Output = Expr;
 
     fn div(self, rhs: f64) -> Expr {
-        Expr::Mul(Arc::new(constant(1.0 / rhs)), Arc::new(self))
+        mul_exprs(constant(1.0 / rhs), self)
     }
 }
 
@@ -176,8 +173,77 @@ impl Div<f64> for &Expr {
     type Output = Expr;
 
     fn div(self, rhs: f64) -> Expr {
-        Expr::Mul(Arc::new(constant(1.0 / rhs)), Arc::new(self.clone()))
+        mul_exprs(constant(1.0 / rhs), self.clone())
     }
+}
+
+fn add_exprs(lhs: Expr, rhs: Expr) -> Expr {
+    let (lhs, rhs) = broadcast_exprs(lhs, rhs);
+    Expr::Add(Arc::new(lhs), Arc::new(rhs))
+}
+
+fn sub_exprs(lhs: Expr, rhs: Expr) -> Expr {
+    let (lhs, rhs) = broadcast_exprs(lhs, rhs);
+    Expr::Add(Arc::new(lhs), Arc::new(Expr::Neg(Arc::new(rhs))))
+}
+
+fn mul_exprs(lhs: Expr, rhs: Expr) -> Expr {
+    let (lhs, rhs) = broadcast_exprs(lhs, rhs);
+    Expr::Mul(Arc::new(lhs), Arc::new(rhs))
+}
+
+pub(crate) fn broadcast_exprs(lhs: Expr, rhs: Expr) -> (Expr, Expr) {
+    let lhs_shape = lhs.shape();
+    let rhs_shape = rhs.shape();
+    let target_shape = lhs_shape
+        .broadcast(&rhs_shape)
+        .unwrap_or_else(|| panic!("cannot broadcast shapes {} and {}", lhs_shape, rhs_shape));
+
+    if lhs_shape == target_shape && rhs_shape == target_shape {
+        return (lhs, rhs);
+    }
+    if lhs_shape.rows() == rhs_shape.rows() && lhs_shape.cols() == rhs_shape.cols() {
+        return (lhs, rhs);
+    }
+
+    let lhs = broadcast_to(lhs, &lhs_shape, &target_shape)
+        .unwrap_or_else(|| panic!("cannot broadcast shape {} to {}", lhs_shape, target_shape));
+    let rhs = broadcast_to(rhs, &rhs_shape, &target_shape)
+        .unwrap_or_else(|| panic!("cannot broadcast shape {} to {}", rhs_shape, target_shape));
+
+    (lhs, rhs)
+}
+
+fn broadcast_to(expr: Expr, expr_shape: &Shape, target_shape: &Shape) -> Option<Expr> {
+    if expr_shape == target_shape {
+        return Some(expr);
+    }
+
+    if expr_shape.is_scalar_like() {
+        return Some(promote(&expr, target_shape.clone()));
+    }
+
+    broadcast_2d_to(expr, expr_shape, target_shape)
+}
+
+fn broadcast_2d_to(expr: Expr, expr_shape: &Shape, target_shape: &Shape) -> Option<Expr> {
+    if !expr_shape.is_matrix() || !target_shape.is_matrix() {
+        return None;
+    }
+
+    if expr_shape.rows() == 1 && target_shape.rows() > 1 && expr_shape.cols() == target_shape.cols()
+    {
+        let left = ones((target_shape.rows(), 1));
+        return Some(matmul(&left, &expr));
+    }
+
+    if expr_shape.cols() == 1 && target_shape.cols() > 1 && expr_shape.rows() == target_shape.rows()
+    {
+        let right = ones((1, target_shape.cols()));
+        return Some(matmul(&expr, &right));
+    }
+
+    None
 }
 
 // ============================================================================
@@ -192,6 +258,23 @@ pub fn sum(expr: &Expr) -> Expr {
 /// Sum along a specific axis.
 pub fn sum_axis(expr: &Expr, axis: usize) -> Expr {
     Expr::Sum(Arc::new(expr.clone()), Some(axis))
+}
+
+/// Promote a scalar-like expression to a target shape.
+pub fn promote(expr: &Expr, shape: impl Into<Shape>) -> Expr {
+    let target_shape = shape.into();
+    let expr_shape = expr.shape();
+
+    if expr_shape == target_shape {
+        return expr.clone();
+    }
+
+    assert!(
+        expr_shape.is_scalar_like(),
+        "only scalar expressions can be promoted"
+    );
+
+    Expr::Promote(Arc::new(expr.clone()), target_shape)
 }
 
 /// Reshape an expression to a new shape.
@@ -347,7 +430,7 @@ pub fn diag(expr: &Expr) -> Expr {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::expr::{constant, variable};
+    use crate::expr::{constant, constant_matrix, constant_vec, nonneg_variable, variable};
 
     #[test]
     fn test_add() {
@@ -390,6 +473,81 @@ mod tests {
     }
 
     #[test]
+    fn test_promote_shape_and_metadata() {
+        let x = nonneg_variable(());
+        let p = promote(&x, (2, 3));
+
+        assert_eq!(p.shape(), Shape::matrix(2, 3));
+        assert_eq!(p.variables(), x.variables());
+        assert!(p.curvature().is_affine());
+        assert!(p.sign().is_nonneg());
+    }
+
+    #[test]
+    fn test_promote_accepts_scalar_like_shapes() {
+        let row_scalar = constant_vec(vec![2.0]);
+        let matrix_scalar = constant_matrix(vec![3.0], 1, 1);
+
+        assert_eq!(promote(&row_scalar, (2, 2)).shape(), Shape::matrix(2, 2));
+        assert_eq!(promote(&matrix_scalar, (2, 2)).shape(), Shape::matrix(2, 2));
+    }
+
+    #[test]
+    fn test_promote_same_shape_is_noop() {
+        let x = variable(3);
+        assert_eq!(promote(&x, 3).shape(), Shape::vector(3));
+    }
+
+    #[test]
+    #[should_panic(expected = "only scalar expressions can be promoted")]
+    fn test_promote_rejects_non_scalar_like_shape() {
+        let x = variable(2);
+        let _ = promote(&x, (2, 2));
+    }
+
+    #[test]
+    fn test_scalar_like_broadcast_shapes() {
+        let x = variable((2, 2));
+        let scalar = variable(());
+        let row_scalar = constant_vec(vec![1.0]);
+        let matrix_scalar = constant_matrix(vec![1.0], 1, 1);
+
+        assert_eq!((&scalar + &x).shape(), Shape::matrix(2, 2));
+        assert_eq!((&x - &row_scalar).shape(), Shape::matrix(2, 2));
+        assert_eq!((&matrix_scalar * &x).shape(), Shape::matrix(2, 2));
+    }
+
+    #[test]
+    fn test_row_and_column_broadcast_shapes() {
+        let m = variable((2, 3));
+        let row = variable((1, 3));
+        let col = variable((2, 1));
+
+        assert_eq!((&row + &m).shape(), Shape::matrix(2, 3));
+        assert_eq!((&m - &row).shape(), Shape::matrix(2, 3));
+        assert_eq!((&col * &m).shape(), Shape::matrix(2, 3));
+        assert_eq!((&m + &col).shape(), Shape::matrix(2, 3));
+    }
+
+    #[test]
+    fn test_mutual_row_and_column_broadcast_shape() {
+        let row = variable((1, 3));
+        let col = variable((2, 1));
+
+        assert_eq!((&row + &col).shape(), Shape::matrix(2, 3));
+        assert_eq!((&col * &row).shape(), Shape::matrix(2, 3));
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot broadcast shapes (2, 2) and (3, 3)")]
+    fn test_incompatible_broadcast_panics_at_construction() {
+        let c = constant_matrix(vec![1.0, 2.0, 3.0, 4.0], 2, 2);
+        let x = variable((3, 3));
+
+        let _ = c * x;
+    }
+
+    #[test]
     fn test_transpose() {
         let x = variable((3, 4));
         let t = transpose(&x);
@@ -402,6 +560,14 @@ mod tests {
         let x = variable(4);
         let b = matmul(&a, &x);
         assert_eq!(b.shape(), Shape::vector(3));
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot matrix-multiply shapes (3, 4) and (3,)")]
+    fn test_invalid_matmul_shape_panics() {
+        let a = variable((3, 4));
+        let x = variable(3);
+        let _ = matmul(&a, &x).shape();
     }
 
     #[test]

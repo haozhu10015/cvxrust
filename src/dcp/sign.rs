@@ -122,6 +122,7 @@ impl Expr {
                 }
             }
             Expr::Sum(a, _) => a.sign(),
+            Expr::Promote(a, _) => a.sign(),
             Expr::Reshape(a, _) => a.sign(),
             Expr::Index(a, _) => a.sign(),
             Expr::VStack(exprs) => combine_signs(exprs),

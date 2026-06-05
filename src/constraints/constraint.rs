@@ -31,24 +31,6 @@ pub enum Constraint {
 }
 
 impl Constraint {
-    /// Broadcast scalar to match the shape of target expression.
-    fn broadcast_scalar(scalar: &Expr, target_shape: &crate::expr::Shape) -> Expr {
-        use crate::expr::{constant, ones};
-
-        // Extract scalar value if it's a constant
-        if let Expr::Constant(data) = scalar {
-            if let Some(val) = data.value.as_scalar() {
-                if target_shape.is_scalar() {
-                    return scalar.clone();
-                }
-                // Broadcast: scalar * ones(shape)
-                return constant(val) * ones(target_shape.clone());
-            }
-        }
-        // Not a scalar constant, return as-is
-        scalar.clone()
-    }
-
     /// Create an equality constraint: lhs == rhs (with broadcasting).
     pub fn eq(lhs: Expr, rhs: Expr) -> Self {
         let (lhs, rhs) = Self::broadcast_if_needed(lhs, rhs);
@@ -80,23 +62,7 @@ impl Constraint {
 
     /// Broadcast scalars to match shapes if needed.
     fn broadcast_if_needed(lhs: Expr, rhs: Expr) -> (Expr, Expr) {
-        let lhs_shape = lhs.shape();
-        let rhs_shape = rhs.shape();
-
-        // If shapes match, no broadcasting needed
-        if lhs_shape == rhs_shape {
-            return (lhs, rhs);
-        }
-
-        // Broadcast scalar to match non-scalar
-        if lhs_shape.is_scalar() && !rhs_shape.is_scalar() {
-            (Self::broadcast_scalar(&lhs, &rhs_shape), rhs)
-        } else if rhs_shape.is_scalar() && !lhs_shape.is_scalar() {
-            (lhs, Self::broadcast_scalar(&rhs, &lhs_shape))
-        } else {
-            // Shapes don't match and neither is scalar - return as-is, will error later
-            (lhs, rhs)
-        }
+        crate::atoms::affine::broadcast_exprs(lhs, rhs)
     }
 
     /// Create a SOC constraint: ||x||_2 <= t.

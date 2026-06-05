@@ -52,6 +52,14 @@ impl Shape {
         self.0.is_empty()
     }
 
+    /// Check if this shape has exactly one element.
+    ///
+    /// This is used for CVXPY-style scalar promotion in broadcasting while
+    /// preserving `is_scalar()` as the strict `()` shape check.
+    pub fn is_scalar_like(&self) -> bool {
+        self.size() == 1
+    }
+
     /// Check if this is a vector.
     pub fn is_vector(&self) -> bool {
         self.0.len() == 1
@@ -94,38 +102,59 @@ impl Shape {
         }
     }
 
-    /// Check if shapes are broadcastable and return the result shape.
+    /// Return the result shape for cvxrust element-wise affine broadcasting.
     pub fn broadcast(&self, other: &Shape) -> Option<Shape> {
-        let max_ndim = self.ndim().max(other.ndim());
-        let mut result = Vec::with_capacity(max_ndim);
+        if self == other {
+            return Some(self.clone());
+        }
 
-        // Pad shapes with 1s on the left
-        let self_padded: Vec<usize> = std::iter::repeat_n(1, max_ndim - self.ndim())
-            .chain(self.0.iter().copied())
-            .collect();
-        let other_padded: Vec<usize> = std::iter::repeat_n(1, max_ndim - other.ndim())
-            .chain(other.0.iter().copied())
-            .collect();
+        if self.is_scalar_like() && !other.is_scalar_like() {
+            return Some(other.clone());
+        }
+        if other.is_scalar_like() && !self.is_scalar_like() {
+            return Some(self.clone());
+        }
 
-        for (a, b) in self_padded.iter().zip(other_padded.iter()) {
-            if *a == *b {
-                result.push(*a);
-            } else if *a == 1 {
-                result.push(*b);
-            } else if *b == 1 {
-                result.push(*a);
-            } else {
-                return None; // Not broadcastable
+        if self.rows() == other.rows() && self.cols() == other.cols() {
+            if self.is_vector() {
+                return Some(self.clone());
+            }
+            if other.is_vector() {
+                return Some(other.clone());
+            }
+            return Some(Shape::matrix(self.rows(), self.cols()));
+        }
+
+        if self.is_matrix() && other.is_matrix() {
+            if self.rows() == 1 && self.cols() == other.cols() {
+                return Some(other.clone());
+            }
+            if other.rows() == 1 && other.cols() == self.cols() {
+                return Some(self.clone());
+            }
+            if self.cols() == 1 && self.rows() == other.rows() {
+                return Some(other.clone());
+            }
+            if other.cols() == 1 && other.rows() == self.rows() {
+                return Some(self.clone());
+            }
+            if self.rows() == 1 && other.cols() == 1 {
+                return Some(Shape::matrix(other.rows(), self.cols()));
+            }
+            if other.rows() == 1 && self.cols() == 1 {
+                return Some(Shape::matrix(self.rows(), other.cols()));
             }
         }
 
-        Some(Shape(result))
+        None
     }
 
     /// Check if matrix multiplication is valid and return result shape.
     pub fn matmul(&self, other: &Shape) -> Option<Shape> {
         // Handle various cases
         match (self.ndim(), other.ndim()) {
+            // matrix @ scalar, treating scalar as a 1x1 column
+            (2, 0) if self.cols() == 1 => Some(Shape::vector(self.rows())),
             // matrix @ matrix
             (2, 2) if self.cols() == other.rows() => Some(Shape::matrix(self.rows(), other.cols())),
             // matrix @ vector
@@ -249,9 +278,19 @@ mod tests {
             Some(Shape::matrix(3, 4))
         );
 
-        // Vector broadcasts with matrix
+        // Row and column matrices broadcast over a matching matrix.
         assert_eq!(
-            Shape::vector(4).broadcast(&Shape::matrix(3, 4)),
+            Shape::matrix(1, 4).broadcast(&Shape::matrix(3, 4)),
+            Some(Shape::matrix(3, 4))
+        );
+        assert_eq!(
+            Shape::matrix(3, 1).broadcast(&Shape::matrix(3, 4)),
+            Some(Shape::matrix(3, 4))
+        );
+
+        // Mutual row/column broadcast.
+        assert_eq!(
+            Shape::matrix(1, 4).broadcast(&Shape::matrix(3, 1)),
             Some(Shape::matrix(3, 4))
         );
 
