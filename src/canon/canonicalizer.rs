@@ -280,8 +280,7 @@ impl CanonContext {
             return CanonExpr::Linear(LinExpr::constant(result));
         }
 
-        // Both have variables - not DCP
-        self.canonicalize_expr(a, false)
+        panic!("cannot canonicalize product of two non-constant expressions")
     }
 
     fn elementwise_mul_const_lin(&self, c: &DMatrix<f64>, lin: &LinExpr) -> LinExpr {
@@ -383,8 +382,7 @@ impl CanonContext {
                 shape: result_shape,
             });
         }
-        // Both have variables - not DCP, return simplified
-        self.canonicalize_expr(a, false)
+        panic!("cannot canonicalize matrix product of two non-constant expressions")
     }
 
     fn matmul_const_lin(&self, a: &Array, b: &LinExpr, shape: Shape) -> LinExpr {
@@ -1531,10 +1529,26 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "cannot canonicalize product of two non-constant expressions")]
+    fn test_canonicalize_variable_product_panics() {
+        let x = variable(2);
+        let y = variable(2);
+        let _ = canonicalize(&(&x * &y), false);
+    }
+
+    #[test]
     #[should_panic(expected = "cannot matrix-multiply shapes (2, 3) and (2,)")]
     fn test_canonicalize_invalid_matmul_shape_panics() {
         let a = constant_matrix(vec![1.0, 3.0, 5.0, 2.0, 4.0, 6.0], 2, 3);
         let x = variable(2);
         let _ = canonicalize(&Expr::MatMul(Arc::new(a), Arc::new(x)), false);
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot canonicalize matrix product of two non-constant expressions")]
+    fn test_canonicalize_variable_matmul_panics() {
+        let x = variable((2, 2));
+        let y = variable((2, 2));
+        let _ = canonicalize(&matmul(&x, &y), false);
     }
 }
