@@ -1466,7 +1466,8 @@ fn scalar_constant_value(expr: &Expr) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::expr::variable;
+    use crate::atoms::{matmul, promote};
+    use crate::expr::{constant, constant_matrix, variable};
 
     #[test]
     fn test_canonicalize_variable() {
@@ -1493,5 +1494,47 @@ mod tests {
         let result = canonicalize(&s, true);
         // For objective, should produce quadratic or SOC
         assert!(matches!(result.expr, CanonExpr::Quadratic(_)) || !result.constraints.is_empty());
+    }
+
+    #[test]
+    fn test_canonicalize_matmul_preserves_vector_result_shape() {
+        let a = constant_matrix(vec![1.0, 3.0, 5.0, 2.0, 4.0, 6.0], 2, 3);
+        let x = variable(3);
+        let result = canonicalize(&matmul(&a, &x), false);
+
+        assert_eq!(result.expr.as_linear().shape, Shape::vector(2));
+    }
+
+    #[test]
+    fn test_canonicalize_matmul_preserves_column_matrix_result_shape() {
+        let a = constant_matrix(vec![1.0, 3.0, 5.0, 2.0, 4.0, 6.0], 2, 3);
+        let x = variable((3, 1));
+        let result = canonicalize(&matmul(&a, &x), false);
+
+        assert_eq!(result.expr.as_linear().shape, Shape::matrix(2, 1));
+    }
+
+    #[test]
+    fn test_canonicalize_mul_sees_promoted_scalar_constant_privately() {
+        let x = variable((2, 2));
+        let x_id = x.variable_id().unwrap();
+        let promoted = promote(&constant(3.0), (2, 2));
+        assert!(promoted.constant_value().is_none());
+
+        let result = canonicalize(&(promoted * x), false);
+        let lin = result.expr.as_linear();
+        let coeff = csc_to_dense(&lin.coeffs[&x_id]);
+
+        assert_eq!(lin.shape, Shape::matrix(2, 2));
+        assert_eq!(coeff, DMatrix::identity(4, 4) * 3.0);
+        assert!(lin.constant.iter().all(|v| v.abs() < 1e-10));
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot matrix-multiply shapes (2, 3) and (2,)")]
+    fn test_canonicalize_invalid_matmul_shape_panics() {
+        let a = constant_matrix(vec![1.0, 3.0, 5.0, 2.0, 4.0, 6.0], 2, 3);
+        let x = variable(2);
+        let _ = canonicalize(&Expr::MatMul(Arc::new(a), Arc::new(x)), false);
     }
 }
