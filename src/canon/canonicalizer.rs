@@ -513,9 +513,10 @@ impl CanonContext {
         })
     }
 
-    fn canonicalize_sum_axis_lin(&self, x: &LinExpr, axis: usize) -> CanonExpr {
+    fn canonicalize_sum_axis_lin(&mut self, x: &LinExpr, axis: usize) -> CanonExpr {
         if x.shape.ndim() <= 1 {
-            return CanonExpr::Linear(x.clone());
+            assert_eq!(axis, 0, "axis {} out of bounds for shape {}", axis, x.shape);
+            return self.canonicalize_sum_lin(x);
         }
 
         let rows = x.shape.rows();
@@ -523,7 +524,7 @@ impl CanonContext {
         let (out_size, mut s_rows, mut s_cols, mut s_vals) = match axis {
             0 => (cols, Vec::new(), Vec::new(), Vec::new()),
             1 => (rows, Vec::new(), Vec::new(), Vec::new()),
-            _ => return CanonExpr::Linear(x.clone()),
+            _ => panic!("axis {} out of bounds for shape {}", axis, x.shape),
         };
 
         for col in 0..cols {
@@ -559,6 +560,13 @@ impl CanonContext {
 
     fn canonicalize_reshape(&mut self, a: &Expr, shape: &Shape) -> CanonExpr {
         let ca = self.canonicalize_expr(a, false).as_linear().clone();
+        assert_eq!(
+            ca.shape.size(),
+            shape.size(),
+            "cannot reshape size {} into shape {}",
+            ca.shape.size(),
+            shape
+        );
         // Reshape doesn't change the linear structure, just the shape interpretation
         CanonExpr::Linear(LinExpr {
             coeffs: ca.coeffs,
@@ -651,6 +659,11 @@ impl CanonContext {
     }
 
     fn vstack_lin(&self, a: &LinExpr, b: &LinExpr) -> LinExpr {
+        assert_eq!(
+            a.shape.cols(),
+            b.shape.cols(),
+            "vstack requires matching column counts"
+        );
         // Stack constants vertically
         let new_const = stack_vertical(&a.constant, &b.constant);
         let new_shape = Shape::matrix(new_const.nrows(), new_const.ncols());
@@ -699,6 +712,11 @@ impl CanonContext {
     }
 
     fn hstack_lin(&self, a: &LinExpr, b: &LinExpr) -> LinExpr {
+        assert_eq!(
+            a.shape.rows(),
+            b.shape.rows(),
+            "hstack requires matching row counts"
+        );
         // Stack constants horizontally
         let new_const = stack_horizontal(&a.constant, &b.constant);
         let new_shape = Shape::matrix(new_const.nrows(), new_const.ncols());
@@ -1429,7 +1447,12 @@ fn dense_sparse_matmul(dense: &DMatrix<f64>, sparse: &CscMatrix<f64>) -> CscMatr
 }
 
 fn stack_vertical(a: &DMatrix<f64>, b: &DMatrix<f64>) -> DMatrix<f64> {
-    let mut result = DMatrix::zeros(a.nrows() + b.nrows(), a.ncols().max(b.ncols()));
+    assert_eq!(
+        a.ncols(),
+        b.ncols(),
+        "vstack requires matching column counts"
+    );
+    let mut result = DMatrix::zeros(a.nrows() + b.nrows(), a.ncols());
     result.view_mut((0, 0), (a.nrows(), a.ncols())).copy_from(a);
     result
         .view_mut((a.nrows(), 0), (b.nrows(), b.ncols()))
@@ -1438,7 +1461,8 @@ fn stack_vertical(a: &DMatrix<f64>, b: &DMatrix<f64>) -> DMatrix<f64> {
 }
 
 fn stack_horizontal(a: &DMatrix<f64>, b: &DMatrix<f64>) -> DMatrix<f64> {
-    let mut result = DMatrix::zeros(a.nrows().max(b.nrows()), a.ncols() + b.ncols());
+    assert_eq!(a.nrows(), b.nrows(), "hstack requires matching row counts");
+    let mut result = DMatrix::zeros(a.nrows(), a.ncols() + b.ncols());
     result.view_mut((0, 0), (a.nrows(), a.ncols())).copy_from(a);
     result
         .view_mut((0, a.ncols()), (b.nrows(), b.ncols()))
@@ -1465,7 +1489,7 @@ fn scalar_constant_value(expr: &Expr) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::atoms::{matmul, promote};
+    use crate::atoms::{matmul, promote, sum_axis};
     use crate::expr::{constant, constant_matrix, variable};
 
     #[test]
@@ -1493,6 +1517,97 @@ mod tests {
         let result = canonicalize(&s, true);
         // For objective, should produce quadratic or SOC
         assert!(matches!(result.expr, CanonExpr::Quadratic(_)) || !result.constraints.is_empty());
+    }
+
+    #[test]
+    fn test_canonicalize_sum_axis_vector_returns_scalar() {
+        let x = variable(3);
+        let result = canonicalize(&sum_axis(&x, 0), false);
+
+        assert_eq!(result.expr.as_linear().shape, Shape::scalar());
+    }
+
+    #[test]
+    #[should_panic(expected = "axis 2 out of bounds for shape (2, 3)")]
+    fn test_canonicalize_sum_axis_invalid_direct_expr_panics() {
+        let x = variable((2, 3));
+        let _ = canonicalize(&Expr::Sum(Arc::new(x), Some(2)), false);
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot reshape size 3 into shape (2, 2)")]
+    fn test_canonicalize_reshape_size_mismatch_direct_expr_panics() {
+        let x = variable(3);
+        let expr = Expr::Reshape(Arc::new(x), Shape::matrix(2, 2));
+        let _ = canonicalize(&expr, false);
+    }
+
+    #[test]
+    #[should_panic(expected = "vstack requires matching column counts")]
+    fn test_canonicalize_vstack_mismatched_columns_direct_expr_panics() {
+        let x = variable((2, 3));
+        let y = variable((3, 2));
+        let expr = Expr::VStack(vec![Arc::new(x), Arc::new(y)]);
+        let _ = canonicalize(&expr, false);
+    }
+
+    #[test]
+    #[should_panic(expected = "hstack requires matching row counts")]
+    fn test_canonicalize_hstack_mismatched_rows_direct_expr_panics() {
+        let x = variable((2, 3));
+        let y = variable((3, 3));
+        let expr = Expr::HStack(vec![Arc::new(x), Arc::new(y)]);
+        let _ = canonicalize(&expr, false);
+    }
+
+    #[test]
+    #[should_panic(expected = "maximum requires at least one expression")]
+    fn test_canonicalize_maximum_empty_direct_expr_panics() {
+        let _ = canonicalize(&Expr::Maximum(Vec::new()), false);
+    }
+
+    #[test]
+    fn test_canonicalize_maximum_direct_expr_broadcasts_scalar_to_vector() {
+        let x = variable(3);
+        let y = variable(());
+        let expr = Expr::Maximum(vec![Arc::new(x), Arc::new(y)]);
+        let result = canonicalize(&expr, false);
+
+        assert_eq!(result.expr.as_linear().shape, Shape::vector(3));
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot broadcast shapes (2,) and (3,)")]
+    fn test_canonicalize_maximum_direct_expr_incompatible_shapes_panics() {
+        let x = variable(2);
+        let y = variable(3);
+        let expr = Expr::Maximum(vec![Arc::new(x), Arc::new(y)]);
+        let _ = canonicalize(&expr, false);
+    }
+
+    #[test]
+    #[should_panic(expected = "minimum requires at least one expression")]
+    fn test_canonicalize_minimum_empty_direct_expr_panics() {
+        let _ = canonicalize(&Expr::Minimum(Vec::new()), false);
+    }
+
+    #[test]
+    fn test_canonicalize_minimum_direct_expr_broadcasts_scalar_to_vector() {
+        let x = variable(3);
+        let y = variable(());
+        let expr = Expr::Minimum(vec![Arc::new(x), Arc::new(y)]);
+        let result = canonicalize(&expr, false);
+
+        assert_eq!(result.expr.as_linear().shape, Shape::vector(3));
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot broadcast shapes (2,) and (3,)")]
+    fn test_canonicalize_minimum_direct_expr_incompatible_shapes_panics() {
+        let x = variable(2);
+        let y = variable(3);
+        let expr = Expr::Minimum(vec![Arc::new(x), Arc::new(y)]);
+        let _ = canonicalize(&expr, false);
     }
 
     #[test]
