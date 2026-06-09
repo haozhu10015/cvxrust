@@ -67,6 +67,11 @@ pub fn csc_to_dense(sparse: &CscMatrix<f64>) -> DMatrix<f64> {
 
 /// Stack two CSC matrices vertically.
 pub fn csc_vstack(a: &CscMatrix<f64>, b: &CscMatrix<f64>) -> CscMatrix<f64> {
+    assert_eq!(
+        a.ncols(),
+        b.ncols(),
+        "vstack requires matching column counts"
+    );
     let mut rows = Vec::new();
     let mut cols = Vec::new();
     let mut vals = Vec::new();
@@ -82,13 +87,7 @@ pub fn csc_vstack(a: &CscMatrix<f64>, b: &CscMatrix<f64>) -> CscMatrix<f64> {
         vals.push(*v);
     }
 
-    csc_from_triplets(
-        a.nrows() + b.nrows(),
-        a.ncols().max(b.ncols()),
-        rows,
-        cols,
-        vals,
-    )
+    csc_from_triplets(a.nrows() + b.nrows(), a.ncols(), rows, cols, vals)
 }
 
 /// Add two CSC matrices.
@@ -103,7 +102,7 @@ pub fn csc_neg(a: &CscMatrix<f64>) -> CscMatrix<f64> {
     let col_offsets: Vec<usize> = a.col_offsets().to_vec();
     let row_indices: Vec<usize> = a.row_indices().to_vec();
     CscMatrix::try_from_csc_data(a.nrows(), a.ncols(), col_offsets, row_indices, values)
-        .unwrap_or_else(|_| CscMatrix::zeros(a.nrows(), a.ncols()))
+        .expect("valid CSC structure should remain valid when negating values")
 }
 
 /// Scale a CSC matrix.
@@ -112,7 +111,7 @@ pub fn csc_scale(a: &CscMatrix<f64>, scalar: f64) -> CscMatrix<f64> {
     let col_offsets: Vec<usize> = a.col_offsets().to_vec();
     let row_indices: Vec<usize> = a.row_indices().to_vec();
     CscMatrix::try_from_csc_data(a.nrows(), a.ncols(), col_offsets, row_indices, values)
-        .unwrap_or_else(|_| CscMatrix::zeros(a.nrows(), a.ncols()))
+        .expect("valid CSC structure should remain valid when scaling values")
 }
 
 /// Multiply sparse matrix by dense matrix on the right: A_sparse @ B_dense
@@ -126,6 +125,7 @@ pub fn sparse_dense_matmul(a: &CscMatrix<f64>, b: &DMatrix<f64>) -> CscMatrix<f6
 
 /// Stack two CSC matrices horizontally.
 pub fn csc_hstack(a: &CscMatrix<f64>, b: &CscMatrix<f64>) -> CscMatrix<f64> {
+    assert_eq!(a.nrows(), b.nrows(), "hstack requires matching row counts");
     let mut rows = Vec::new();
     let mut cols = Vec::new();
     let mut vals = Vec::new();
@@ -141,13 +141,7 @@ pub fn csc_hstack(a: &CscMatrix<f64>, b: &CscMatrix<f64>) -> CscMatrix<f64> {
         vals.push(*v);
     }
 
-    csc_from_triplets(
-        a.nrows().max(b.nrows()),
-        a.ncols() + b.ncols(),
-        rows,
-        cols,
-        vals,
-    )
+    csc_from_triplets(a.nrows(), a.ncols() + b.ncols(), rows, cols, vals)
 }
 
 /// Multiply two CSC matrices: A @ B
@@ -219,5 +213,65 @@ mod tests {
         for v in c.values() {
             assert!((v - 2.0).abs() < 1e-10);
         }
+    }
+
+    #[test]
+    fn test_csc_neg_preserves_structure_and_negates_values() {
+        let a = csc_from_triplets(2, 2, vec![0, 1], vec![0, 1], vec![2.0, -3.0]);
+        let neg = csc_neg(&a);
+        let dense = csc_to_dense(&neg);
+
+        assert_eq!(neg.nrows(), 2);
+        assert_eq!(neg.ncols(), 2);
+        assert_eq!(dense[(0, 0)], -2.0);
+        assert_eq!(dense[(1, 1)], 3.0);
+    }
+
+    #[test]
+    fn test_csc_scale_preserves_structure_and_scales_values() {
+        let a = csc_from_triplets(2, 2, vec![0, 1], vec![0, 1], vec![2.0, -3.0]);
+        let scaled = csc_scale(&a, 4.0);
+        let dense = csc_to_dense(&scaled);
+
+        assert_eq!(scaled.nrows(), 2);
+        assert_eq!(scaled.ncols(), 2);
+        assert_eq!(dense[(0, 0)], 8.0);
+        assert_eq!(dense[(1, 1)], -12.0);
+    }
+
+    #[test]
+    fn test_csc_vstack_matching_columns() {
+        let a = CscMatrix::<f64>::identity(2);
+        let b = CscMatrix::<f64>::zeros(3, 2);
+        let stacked = csc_vstack(&a, &b);
+
+        assert_eq!(stacked.nrows(), 5);
+        assert_eq!(stacked.ncols(), 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "vstack requires matching column counts")]
+    fn test_csc_vstack_mismatched_columns_panics() {
+        let a = CscMatrix::<f64>::zeros(2, 2);
+        let b = CscMatrix::<f64>::zeros(3, 3);
+        let _ = csc_vstack(&a, &b);
+    }
+
+    #[test]
+    fn test_csc_hstack_matching_rows() {
+        let a = CscMatrix::<f64>::identity(2);
+        let b = CscMatrix::<f64>::identity(2);
+        let stacked = csc_hstack(&a, &b);
+
+        assert_eq!(stacked.nrows(), 2);
+        assert_eq!(stacked.ncols(), 4);
+    }
+
+    #[test]
+    #[should_panic(expected = "hstack requires matching row counts")]
+    fn test_csc_hstack_mismatched_rows_panics() {
+        let a = CscMatrix::<f64>::zeros(2, 2);
+        let b = CscMatrix::<f64>::zeros(3, 2);
+        let _ = csc_hstack(&a, &b);
     }
 }
