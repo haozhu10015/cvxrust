@@ -11,7 +11,7 @@ use nalgebra::DMatrix;
 use nalgebra_sparse::CscMatrix;
 
 use super::lin_expr::{LinExpr, QuadExpr};
-use crate::atoms::affine::broadcast_elementwise_exprs;
+use crate::atoms::broadcast::broadcast_elementwise_exprs;
 use crate::expr::{Array, Expr, ExprId, IndexSpec, Shape, VariableBuilder};
 use crate::sparse::{csc_add, csc_repeat_rows, csc_to_dense, csc_vstack, dense_to_csc};
 

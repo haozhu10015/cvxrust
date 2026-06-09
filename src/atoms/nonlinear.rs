@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use crate::atoms::affine::broadcast_elementwise_exprs;
+use crate::atoms::broadcast::broadcast_elementwise_exprs;
 use crate::expr::Expr;
 
 // ============================================================================
