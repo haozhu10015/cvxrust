@@ -257,6 +257,13 @@ pub fn sum(expr: &Expr) -> Expr {
 
 /// Sum along a specific axis.
 pub fn sum_axis(expr: &Expr, axis: usize) -> Expr {
+    let shape = expr.shape();
+    assert!(
+        axis < shape.ndim().max(1),
+        "axis {} out of bounds for shape {}",
+        axis,
+        shape
+    );
     Expr::Sum(Arc::new(expr.clone()), Some(axis))
 }
 
@@ -470,6 +477,20 @@ mod tests {
         let x = variable((3, 4));
         let s = sum(&x);
         assert_eq!(s.shape(), Shape::scalar());
+    }
+
+    #[test]
+    fn test_sum_axis_vector_shape() {
+        let x = variable(3);
+        let s = sum_axis(&x, 0);
+        assert_eq!(s.shape(), Shape::scalar());
+    }
+
+    #[test]
+    #[should_panic(expected = "axis 1 out of bounds for shape (3,)")]
+    fn test_sum_axis_invalid_axis_panics() {
+        let x = variable(3);
+        let _ = sum_axis(&x, 1);
     }
 
     #[test]
