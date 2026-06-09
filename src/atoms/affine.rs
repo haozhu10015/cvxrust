@@ -457,7 +457,7 @@ pub fn cumsum(expr: &Expr) -> Expr {
 /// Diagonal matrix from vector, or diagonal of matrix.
 ///
 /// - Vector input: Creates diagonal matrix with vector on diagonal
-/// - Matrix input: Extracts diagonal as vector (v1.0: returns input as fallback)
+/// - Matrix input: Extracts diagonal as vector
 pub fn diag(expr: &Expr) -> Expr {
     Expr::Diag(Arc::new(expr.clone()))
 }
