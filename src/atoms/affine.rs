@@ -286,7 +286,15 @@ pub fn promote(expr: &Expr, shape: impl Into<Shape>) -> Expr {
 
 /// Reshape an expression to a new shape.
 pub fn reshape(expr: &Expr, shape: impl Into<Shape>) -> Expr {
-    Expr::Reshape(Arc::new(expr.clone()), shape.into())
+    let shape = shape.into();
+    assert_eq!(
+        expr.shape().size(),
+        shape.size(),
+        "cannot reshape size {} into shape {}",
+        expr.shape().size(),
+        shape
+    );
+    Expr::Reshape(Arc::new(expr.clone()), shape)
 }
 
 /// Flatten an expression to a vector.
@@ -517,6 +525,13 @@ mod tests {
     fn test_promote_same_shape_is_noop() {
         let x = variable(3);
         assert_eq!(promote(&x, 3).shape(), Shape::vector(3));
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot reshape size 3 into shape (2, 2)")]
+    fn test_reshape_size_mismatch_panics() {
+        let x = variable(3);
+        let _ = reshape(&x, (2, 2));
     }
 
     #[test]
