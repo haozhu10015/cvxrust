@@ -356,12 +356,11 @@ impl Expr {
                 if axis.is_some() {
                     // Sum along axis reduces that dimension
                     let dims = a.shape();
-                    if dims.ndim() <= 1 {
-                        Shape::scalar()
-                    } else if *axis == Some(0) {
-                        Shape::vector(dims.cols())
-                    } else {
-                        Shape::vector(dims.rows())
+                    match (dims.ndim(), axis.unwrap()) {
+                        (0 | 1, 0) => Shape::scalar(),
+                        (2, 0) => Shape::vector(dims.cols()),
+                        (2, 1) => Shape::vector(dims.rows()),
+                        (_, axis) => panic!("axis {} out of bounds for shape {}", axis, dims),
                     }
                 } else {
                     Shape::scalar()
@@ -374,6 +373,13 @@ impl Expr {
                     return Shape::scalar();
                 }
                 let first = exprs[0].shape();
+                for e in &exprs[1..] {
+                    assert_eq!(
+                        e.shape().cols(),
+                        first.cols(),
+                        "vstack requires matching column counts"
+                    );
+                }
                 let total_rows: usize = exprs.iter().map(|e| e.shape().rows()).sum();
                 Shape::matrix(total_rows, first.cols())
             }
@@ -382,6 +388,13 @@ impl Expr {
                     return Shape::scalar();
                 }
                 let first = exprs[0].shape();
+                for e in &exprs[1..] {
+                    assert_eq!(
+                        e.shape().rows(),
+                        first.rows(),
+                        "hstack requires matching row counts"
+                    );
+                }
                 let total_cols: usize = exprs.iter().map(|e| e.shape().cols()).sum();
                 Shape::matrix(first.rows(), total_cols)
             }
@@ -615,5 +628,61 @@ mod tests {
             Shape::vector(3)
         );
         assert_eq!(Expr::Sum(Arc::new(x), Some(1)).shape(), Shape::vector(2));
+    }
+
+    #[test]
+    #[should_panic(expected = "axis 2 out of bounds for shape (2, 3)")]
+    fn test_sum_axis_invalid_direct_expr_shape_panics() {
+        let x = Expr::Variable(VariableData {
+            id: ExprId::new(),
+            shape: Shape::matrix(2, 3),
+            name: None,
+            nonneg: false,
+            nonpos: false,
+        });
+
+        let _ = Expr::Sum(Arc::new(x), Some(2)).shape();
+    }
+
+    #[test]
+    #[should_panic(expected = "vstack requires matching column counts")]
+    fn test_vstack_mismatched_columns_direct_expr_shape_panics() {
+        let x = Expr::Variable(VariableData {
+            id: ExprId::new(),
+            shape: Shape::matrix(2, 3),
+            name: None,
+            nonneg: false,
+            nonpos: false,
+        });
+        let y = Expr::Variable(VariableData {
+            id: ExprId::new(),
+            shape: Shape::matrix(3, 2),
+            name: None,
+            nonneg: false,
+            nonpos: false,
+        });
+
+        let _ = Expr::VStack(vec![Arc::new(x), Arc::new(y)]).shape();
+    }
+
+    #[test]
+    #[should_panic(expected = "hstack requires matching row counts")]
+    fn test_hstack_mismatched_rows_direct_expr_shape_panics() {
+        let x = Expr::Variable(VariableData {
+            id: ExprId::new(),
+            shape: Shape::matrix(2, 3),
+            name: None,
+            nonneg: false,
+            nonpos: false,
+        });
+        let y = Expr::Variable(VariableData {
+            id: ExprId::new(),
+            shape: Shape::matrix(3, 3),
+            name: None,
+            nonneg: false,
+            nonpos: false,
+        });
+
+        let _ = Expr::HStack(vec![Arc::new(x), Arc::new(y)]).shape();
     }
 }
