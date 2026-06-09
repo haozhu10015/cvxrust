@@ -11,6 +11,7 @@ use nalgebra::DMatrix;
 use nalgebra_sparse::CscMatrix;
 
 use super::lin_expr::{LinExpr, QuadExpr};
+use crate::atoms::affine::broadcast_elementwise_exprs;
 use crate::expr::{Array, Expr, ExprId, IndexSpec, Shape, VariableBuilder};
 use crate::sparse::{csc_add, csc_repeat_rows, csc_to_dense, csc_vstack, dense_to_csc};
 
@@ -918,13 +919,13 @@ impl CanonContext {
     fn canonicalize_maximum(&mut self, exprs: &[Arc<Expr>]) -> CanonExpr {
         // max(x1, ..., xn): Introduce t, t >= x_i for all i
         if exprs.is_empty() {
-            return CanonExpr::Linear(LinExpr::zeros(Shape::scalar()));
+            panic!("maximum requires at least one expression");
         }
-
-        let shape = exprs[0].shape();
+        let (shape, exprs) =
+            broadcast_elementwise_exprs(exprs.iter().map(|expr| expr.as_ref().clone()));
         let (_, t) = self.new_aux_var(shape);
 
-        for e in exprs {
+        for e in &exprs {
             let ce = self.canonicalize_expr(e, false).as_linear().clone();
             // t >= x_i, i.e., t - x_i >= 0
             self.constraints.push(ConeConstraint::NonNeg {
@@ -938,13 +939,13 @@ impl CanonContext {
     fn canonicalize_minimum(&mut self, exprs: &[Arc<Expr>]) -> CanonExpr {
         // min(x1, ..., xn): Introduce t, t <= x_i for all i
         if exprs.is_empty() {
-            return CanonExpr::Linear(LinExpr::zeros(Shape::scalar()));
+            panic!("minimum requires at least one expression");
         }
-
-        let shape = exprs[0].shape();
+        let (shape, exprs) =
+            broadcast_elementwise_exprs(exprs.iter().map(|expr| expr.as_ref().clone()));
         let (_, t) = self.new_aux_var(shape);
 
-        for e in exprs {
+        for e in &exprs {
             let ce = self.canonicalize_expr(e, false).as_linear().clone();
             // t <= x_i, i.e., x_i - t >= 0
             self.constraints.push(ConeConstraint::NonNeg {

@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use crate::atoms::affine::broadcast_to;
+use crate::atoms::affine::broadcast_elementwise_exprs;
 use crate::expr::Expr;
 
 // ============================================================================
@@ -144,7 +144,8 @@ pub fn maximum(exprs: Vec<Expr>) -> Expr {
         return exprs.into_iter().next().unwrap();
     }
 
-    Expr::Maximum(broadcast_elementwise_args(exprs))
+    let (_, exprs) = broadcast_elementwise_exprs(exprs);
+    Expr::Maximum(exprs.into_iter().map(Arc::new).collect())
 }
 
 /// Maximum of two expressions.
@@ -166,34 +167,13 @@ pub fn minimum(exprs: Vec<Expr>) -> Expr {
         return exprs.into_iter().next().unwrap();
     }
 
-    Expr::Minimum(broadcast_elementwise_args(exprs))
+    let (_, exprs) = broadcast_elementwise_exprs(exprs);
+    Expr::Minimum(exprs.into_iter().map(Arc::new).collect())
 }
 
 /// Minimum of two expressions.
 pub fn min2(a: &Expr, b: &Expr) -> Expr {
     minimum(vec![a.clone(), b.clone()])
-}
-
-fn broadcast_elementwise_args(exprs: Vec<Expr>) -> Vec<Arc<Expr>> {
-    let target_shape = exprs
-        .iter()
-        .map(|expr| expr.shape())
-        .reduce(|acc, shape| {
-            acc.broadcast(&shape)
-                .unwrap_or_else(|| panic!("cannot broadcast shapes {} and {}", acc, shape))
-        })
-        .expect("elementwise atom requires at least one expression");
-
-    exprs
-        .into_iter()
-        .map(|expr| {
-            let expr_shape = expr.shape();
-            let expr = broadcast_to(expr, &expr_shape, &target_shape).unwrap_or_else(|| {
-                panic!("cannot broadcast shape {} to {}", expr_shape, target_shape)
-            });
-            Arc::new(expr)
-        })
-        .collect()
 }
 
 // ============================================================================
