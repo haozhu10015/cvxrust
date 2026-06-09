@@ -84,6 +84,13 @@ impl LinExpr {
 
     /// Add two linear expressions.
     pub fn add(&self, other: &LinExpr) -> LinExpr {
+        let new_shape = self.shape.broadcast(&other.shape).unwrap_or_else(|| {
+            panic!(
+                "cannot add linear expressions with shapes {} and {}",
+                self.shape, other.shape
+            )
+        });
+
         // Optimization: if self has no coefficients, just clone other's
         let coeffs = if self.coeffs.is_empty() {
             other.coeffs.clone()
@@ -116,14 +123,10 @@ impl LinExpr {
             let scalar = self.constant[(0, 0)];
             other.constant.map(|v| v + scalar)
         } else {
-            // Incompatible shapes, just use self (will likely error later)
-            self.constant.clone()
-        };
-
-        let new_shape = if self.shape.size() >= other.shape.size() {
-            self.shape.clone()
-        } else {
-            other.shape.clone()
+            panic!(
+                "cannot add linear expression constants with shapes {} and {}",
+                self.shape, other.shape
+            );
         };
 
         LinExpr {
@@ -284,6 +287,14 @@ mod tests {
         let e2 = LinExpr::variable(var2, Shape::vector(3));
         let sum = e1.add(&e2);
         assert_eq!(sum.variables().len(), 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot add linear expressions with shapes (2,) and (3,)")]
+    fn test_lin_expr_add_incompatible_shapes_panics() {
+        let e1 = LinExpr::variable(ExprId::new(), Shape::vector(2));
+        let e2 = LinExpr::variable(ExprId::new(), Shape::vector(3));
+        let _ = e1.add(&e2);
     }
 
     #[test]
