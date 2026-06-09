@@ -315,11 +315,31 @@ pub fn trace(expr: &Expr) -> Expr {
 
 /// Vertical stack (row-wise concatenation).
 pub fn vstack(exprs: Vec<Expr>) -> Expr {
+    if let Some(first) = exprs.first() {
+        let cols = first.shape().cols();
+        for expr in &exprs[1..] {
+            assert_eq!(
+                expr.shape().cols(),
+                cols,
+                "vstack requires matching column counts"
+            );
+        }
+    }
     Expr::VStack(exprs.into_iter().map(Arc::new).collect())
 }
 
 /// Horizontal stack (column-wise concatenation).
 pub fn hstack(exprs: Vec<Expr>) -> Expr {
+    if let Some(first) = exprs.first() {
+        let rows = first.shape().rows();
+        for expr in &exprs[1..] {
+            assert_eq!(
+                expr.shape().rows(),
+                rows,
+                "hstack requires matching row counts"
+            );
+        }
+    }
     Expr::HStack(exprs.into_iter().map(Arc::new).collect())
 }
 
@@ -691,6 +711,22 @@ mod tests {
         let y = variable((3, 3));
         let z = vstack(vec![x, y]);
         assert_eq!(z.shape(), Shape::matrix(5, 3));
+    }
+
+    #[test]
+    #[should_panic(expected = "vstack requires matching column counts")]
+    fn test_vstack_mismatched_columns_panics() {
+        let x = variable((2, 3));
+        let y = variable((3, 2));
+        let _ = vstack(vec![x, y]);
+    }
+
+    #[test]
+    #[should_panic(expected = "hstack requires matching row counts")]
+    fn test_hstack_mismatched_rows_panics() {
+        let x = variable((2, 3));
+        let y = variable((3, 3));
+        let _ = hstack(vec![x, y]);
     }
 
     #[test]
