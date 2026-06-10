@@ -314,6 +314,71 @@ fn test_constant_vector_times_scalar_affine_broadcasts() {
     }
 }
 
+#[test]
+fn test_norm1_matrix_variable_canonicalizes_flat_aux_constraints() {
+    let x = variable((2, 3));
+
+    let sol = Problem::minimize(norm1(&x))
+        .subject_to([x.ge(1.0)])
+        .solve()
+        .expect("matrix norm1 problem should solve");
+
+    assert!((sol.value.unwrap() - 6.0).abs() < TOL);
+}
+
+#[test]
+fn test_norm_inf_matrix_variable_canonicalizes_flat_aux_constraints() {
+    let x = variable((2, 3));
+
+    let sol = Problem::minimize(norm_inf(&x))
+        .subject_to([sum(&x).eq(6.0)])
+        .solve()
+        .expect("matrix norm_inf problem should solve");
+
+    assert!((sol.value.unwrap() - 1.0).abs() < TOL);
+}
+
+#[test]
+fn test_sum_squares_matrix_argument_flattens_soc_stack() {
+    let x = variable((2, 3));
+
+    let sol = Problem::maximize(sum(&x))
+        .subject_to([sum_squares(&x).le(1.0)])
+        .solve()
+        .expect("matrix sum_squares constraint should solve");
+
+    assert!((sol.value.unwrap() - 6.0_f64.sqrt()).abs() < TOL);
+}
+
+#[test]
+fn test_quad_over_lin_matrix_argument_flattens_soc_stack() {
+    let x = variable((2, 3));
+
+    let sol = Problem::maximize(sum(&x))
+        .subject_to([quad_over_lin(&x, &constant(1.0)).le(1.0)])
+        .solve()
+        .expect("matrix quad_over_lin constraint should solve");
+
+    assert!((sol.value.unwrap() - 6.0_f64.sqrt()).abs() < TOL);
+}
+
+#[test]
+fn test_maximum_minimum_accept_vector_and_column_shapes() {
+    let x = variable(3);
+    let y = variable((3, 1));
+
+    assert_eq!(
+        maximum(vec![x.clone(), y.clone()]).shape(),
+        Shape::vector(3)
+    );
+    assert_eq!(
+        minimum(vec![x.clone(), y.clone()]).shape(),
+        Shape::vector(3)
+    );
+    assert_eq!(max2(&x, &y).shape(), Shape::vector(3));
+    assert_eq!(min2(&x, &y).shape(), Shape::vector(3));
+}
+
 fn solution_value(sol: &Solution, expr: &Expr) -> f64 {
     expr.value(sol).as_scalar().expect("expected scalar")
 }
