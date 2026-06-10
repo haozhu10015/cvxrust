@@ -659,7 +659,7 @@ impl CanonContext {
     }
 
     fn vstack_lin(&self, a: &LinExpr, b: &LinExpr) -> LinExpr {
-        assert_eq!(
+        debug_assert_eq!(
             a.shape.cols(),
             b.shape.cols(),
             "vstack requires matching column counts"
@@ -712,7 +712,7 @@ impl CanonContext {
     }
 
     fn hstack_lin(&self, a: &LinExpr, b: &LinExpr) -> LinExpr {
-        assert_eq!(
+        debug_assert_eq!(
             a.shape.rows(),
             b.shape.rows(),
             "hstack requires matching row counts"
@@ -1447,7 +1447,7 @@ fn dense_sparse_matmul(dense: &DMatrix<f64>, sparse: &CscMatrix<f64>) -> CscMatr
 }
 
 fn stack_vertical(a: &DMatrix<f64>, b: &DMatrix<f64>) -> DMatrix<f64> {
-    assert_eq!(
+    debug_assert_eq!(
         a.ncols(),
         b.ncols(),
         "vstack requires matching column counts"
@@ -1461,7 +1461,7 @@ fn stack_vertical(a: &DMatrix<f64>, b: &DMatrix<f64>) -> DMatrix<f64> {
 }
 
 fn stack_horizontal(a: &DMatrix<f64>, b: &DMatrix<f64>) -> DMatrix<f64> {
-    assert_eq!(a.nrows(), b.nrows(), "hstack requires matching row counts");
+    debug_assert_eq!(a.nrows(), b.nrows(), "hstack requires matching row counts");
     let mut result = DMatrix::zeros(a.nrows(), a.ncols() + b.ncols());
     result.view_mut((0, 0), (a.nrows(), a.ncols())).copy_from(a);
     result
