@@ -677,14 +677,14 @@ impl CanonContext {
             let ca = a.coeffs.get(&var_id);
             let cb = b.coeffs.get(&var_id);
             let stacked = match (ca, cb) {
-                (Some(ma), Some(mb)) => stack_csc_vertical(ma, mb),
+                (Some(ma), Some(mb)) => stack_csc_vertical_for_shapes(ma, mb, &a.shape, &b.shape),
                 (Some(ma), None) => {
                     let zeros = CscMatrix::zeros(b.size(), ma.ncols());
-                    stack_csc_vertical(ma, &zeros)
+                    stack_csc_vertical_for_shapes(ma, &zeros, &a.shape, &b.shape)
                 }
                 (None, Some(mb)) => {
                     let zeros = CscMatrix::zeros(a.size(), mb.ncols());
-                    stack_csc_vertical(&zeros, mb)
+                    stack_csc_vertical_for_shapes(&zeros, mb, &a.shape, &b.shape)
                 }
                 (None, None) => continue,
             };
@@ -1486,8 +1486,52 @@ fn stack_horizontal(a: &DMatrix<f64>, b: &DMatrix<f64>) -> DMatrix<f64> {
     result
 }
 
-fn stack_csc_vertical(a: &CscMatrix<f64>, b: &CscMatrix<f64>) -> CscMatrix<f64> {
-    csc_vstack(a, b)
+fn stack_csc_vertical_for_shapes(
+    a: &CscMatrix<f64>,
+    b: &CscMatrix<f64>,
+    a_shape: &Shape,
+    b_shape: &Shape,
+) -> CscMatrix<f64> {
+    debug_assert_eq!(
+        a_shape.cols(),
+        b_shape.cols(),
+        "vstack requires matching column counts"
+    );
+    debug_assert_eq!(a.ncols(), b.ncols());
+
+    let a_rows = a_shape.rows();
+    let b_rows = b_shape.rows();
+    let cols = a_shape.cols();
+    let out_rows = a_rows + b_rows;
+
+    let mut rows = Vec::new();
+    let mut col_indices = Vec::new();
+    let mut vals = Vec::new();
+
+    for (r, c, v) in a.triplet_iter() {
+        let matrix_col = r / a_rows;
+        let matrix_row = r % a_rows;
+        debug_assert!(matrix_col < cols);
+        rows.push(matrix_row + matrix_col * out_rows);
+        col_indices.push(c);
+        vals.push(*v);
+    }
+    for (r, c, v) in b.triplet_iter() {
+        let matrix_col = r / b_rows;
+        let matrix_row = r % b_rows;
+        debug_assert!(matrix_col < cols);
+        rows.push(a_rows + matrix_row + matrix_col * out_rows);
+        col_indices.push(c);
+        vals.push(*v);
+    }
+
+    crate::sparse::triplets_to_csc(
+        a_shape.size() + b_shape.size(),
+        a.ncols(),
+        &rows,
+        &col_indices,
+        &vals,
+    )
 }
 
 fn repeat_rows_csc(m: &CscMatrix<f64>, times: usize) -> CscMatrix<f64> {
