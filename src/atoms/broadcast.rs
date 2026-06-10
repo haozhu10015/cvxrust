@@ -4,29 +4,16 @@ use crate::atoms::affine::{matmul, promote};
 use crate::expr::{Expr, Shape, ones};
 
 pub(crate) fn broadcast_exprs(lhs: Expr, rhs: Expr) -> (Expr, Expr) {
-    let lhs_shape = lhs.shape();
-    let rhs_shape = rhs.shape();
-    let target_shape = lhs_shape
-        .broadcast(&rhs_shape)
-        .unwrap_or_else(|| panic!("cannot broadcast shapes {} and {}", lhs_shape, rhs_shape));
-
-    if lhs_shape == target_shape && rhs_shape == target_shape {
-        return (lhs, rhs);
-    }
-    if lhs_shape.rows() == rhs_shape.rows() && lhs_shape.cols() == rhs_shape.cols() {
-        return (lhs, rhs);
-    }
-
-    let lhs = broadcast_to(lhs, &lhs_shape, &target_shape)
-        .unwrap_or_else(|| panic!("cannot broadcast shape {} to {}", lhs_shape, target_shape));
-    let rhs = broadcast_to(rhs, &rhs_shape, &target_shape)
-        .unwrap_or_else(|| panic!("cannot broadcast shape {} to {}", rhs_shape, target_shape));
-
+    let mut exprs = broadcast_elementwise_exprs([lhs, rhs]).1;
+    let rhs = exprs.pop().expect("binary broadcast should return rhs");
+    let lhs = exprs.pop().expect("binary broadcast should return lhs");
     (lhs, rhs)
 }
 
 pub(crate) fn broadcast_to(expr: Expr, expr_shape: &Shape, target_shape: &Shape) -> Option<Expr> {
-    if expr_shape == target_shape {
+    if expr_shape == target_shape
+        || (expr_shape.rows() == target_shape.rows() && expr_shape.cols() == target_shape.cols())
+    {
         return Some(expr);
     }
 
