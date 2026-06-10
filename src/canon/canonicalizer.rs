@@ -847,6 +847,7 @@ impl CanonContext {
         // Introduce t_i >= 0, -t_i <= x_i <= t_i
         // Then ||x||_1 = sum(t_i)
         let cx = self.canonicalize_expr(x, false).as_linear().clone();
+        let cx = self.flatten_lin(&cx);
         let size = cx.size();
         let (_, t) = self.new_nonneg_aux_var(Shape::vector(size));
 
@@ -880,6 +881,7 @@ impl CanonContext {
         // ||x||_inf = max(|x_i|)
         // Introduce t >= 0, -t <= x_i <= t for all i
         let cx = self.canonicalize_expr(x, false).as_linear().clone();
+        let cx = self.flatten_lin(&cx);
         let size = cx.size();
         let (_, t) = self.new_nonneg_aux_var(Shape::scalar());
 
@@ -1002,6 +1004,7 @@ impl CanonContext {
     fn canonicalize_sum_squares(&mut self, x: &Expr, for_objective: bool) -> CanonExpr {
         // ||x||_2^2 = x' x
         let cx = self.canonicalize_expr(x, false).as_linear().clone();
+        let cx = self.flatten_lin(&cx);
         self.canonicalize_sum_squares_lin(&cx, for_objective)
     }
 
@@ -1059,6 +1062,7 @@ impl CanonContext {
     fn canonicalize_quad_over_lin(&mut self, x: &Expr, y: &Expr) -> CanonExpr {
         // ||x||_2^2 / y: introduce t with ||[2x; t-y]||_2 <= t+y.
         let cx = self.canonicalize_expr(x, false).as_linear().clone();
+        let cx = self.flatten_lin(&cx);
         let cy = self.canonicalize_expr(y, false).as_linear().clone();
         let (_, t) = self.new_nonneg_aux_var(Shape::scalar());
 
@@ -1096,6 +1100,18 @@ impl CanonContext {
             constant: new_const,
             shape: Shape::scalar(),
         })
+    }
+
+    fn flatten_lin(&self, x: &LinExpr) -> LinExpr {
+        let size = x.size();
+        LinExpr {
+            coeffs: x.coeffs.clone(),
+            constant: x
+                .constant
+                .clone()
+                .reshape_generic(nalgebra::Dyn(size), nalgebra::Dyn(1)),
+            shape: Shape::vector(size),
+        }
     }
 
     fn expand_scalar(&self, scalar: &LinExpr, size: usize) -> LinExpr {
