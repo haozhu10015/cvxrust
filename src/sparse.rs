@@ -67,7 +67,7 @@ pub fn csc_to_dense(sparse: &CscMatrix<f64>) -> DMatrix<f64> {
 
 /// Stack two CSC matrices vertically.
 pub fn csc_vstack(a: &CscMatrix<f64>, b: &CscMatrix<f64>) -> CscMatrix<f64> {
-    debug_assert_eq!(
+    assert_eq!(
         a.ncols(),
         b.ncols(),
         "vstack requires matching column counts"
@@ -125,7 +125,7 @@ pub fn sparse_dense_matmul(a: &CscMatrix<f64>, b: &DMatrix<f64>) -> CscMatrix<f6
 
 /// Stack two CSC matrices horizontally.
 pub fn csc_hstack(a: &CscMatrix<f64>, b: &CscMatrix<f64>) -> CscMatrix<f64> {
-    debug_assert_eq!(a.nrows(), b.nrows(), "hstack requires matching row counts");
+    assert_eq!(a.nrows(), b.nrows(), "hstack requires matching row counts");
     let mut rows = Vec::new();
     let mut cols = Vec::new();
     let mut vals = Vec::new();
