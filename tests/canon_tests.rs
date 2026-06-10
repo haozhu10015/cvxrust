@@ -379,6 +379,38 @@ fn test_maximum_minimum_accept_vector_and_column_shapes() {
     assert_eq!(min2(&x, &y).shape(), Shape::vector(3));
 }
 
+#[test]
+fn test_vstack_matrix_constraint_uses_column_major_interleaving() {
+    let x = variable((2, 2));
+    let y = variable((1, 2));
+    let target = constant_dmatrix(DMatrix::from_row_slice(
+        3,
+        2,
+        &[1.0, 4.0, 2.0, 5.0, 3.0, 6.0],
+    ));
+
+    let sol = Problem::minimize(sum(&x))
+        .subject_to([vstack(vec![x.clone(), y.clone()]).eq(target)])
+        .solve()
+        .expect("matrix vstack equality should solve");
+
+    if let Array::Dense(x_vals) = x.value(&sol) {
+        assert!((x_vals[(0, 0)] - 1.0).abs() < TOL);
+        assert!((x_vals[(1, 0)] - 2.0).abs() < TOL);
+        assert!((x_vals[(0, 1)] - 4.0).abs() < TOL);
+        assert!((x_vals[(1, 1)] - 5.0).abs() < TOL);
+    } else {
+        panic!("expected dense matrix solution for x");
+    }
+
+    if let Array::Dense(y_vals) = y.value(&sol) {
+        assert!((y_vals[(0, 0)] - 3.0).abs() < TOL);
+        assert!((y_vals[(0, 1)] - 6.0).abs() < TOL);
+    } else {
+        panic!("expected dense matrix solution for y");
+    }
+}
+
 fn solution_value(sol: &Solution, expr: &Expr) -> f64 {
     expr.value(sol).as_scalar().expect("expected scalar")
 }
