@@ -941,10 +941,38 @@ impl CanonContext {
         if exprs.is_empty() {
             panic!("maximum requires at least one expression");
         }
-        let (shape, exprs) =
-            broadcast_elementwise_exprs(exprs.iter().map(|expr| expr.as_ref().clone()));
+        let first_shape = exprs[0].shape();
+        let all_same_shape = exprs.iter().all(|expr| expr.shape() == first_shape);
+        let shape = if all_same_shape {
+            first_shape
+        } else {
+            exprs
+                .iter()
+                .map(|expr| expr.shape())
+                .reduce(|acc, shape| {
+                    acc.broadcast(&shape)
+                        .unwrap_or_else(|| panic!("cannot broadcast shapes {} and {}", acc, shape))
+                })
+                .expect("maximum requires at least one expression")
+        };
         let (_, t) = self.new_aux_var(shape);
 
+        if all_same_shape {
+            for e in exprs {
+                let ce = self
+                    .canonicalize_expr(e.as_ref(), false)
+                    .as_linear()
+                    .clone();
+                // t >= x_i, i.e., t - x_i >= 0
+                self.constraints.push(ConeConstraint::NonNeg {
+                    a: t.add(&ce.neg()),
+                });
+            }
+            return CanonExpr::Linear(t);
+        }
+
+        let (_, exprs) =
+            broadcast_elementwise_exprs(exprs.iter().map(|expr| expr.as_ref().clone()));
         for e in &exprs {
             let ce = self.canonicalize_expr(e, false).as_linear().clone();
             // t >= x_i, i.e., t - x_i >= 0
@@ -961,10 +989,38 @@ impl CanonContext {
         if exprs.is_empty() {
             panic!("minimum requires at least one expression");
         }
-        let (shape, exprs) =
-            broadcast_elementwise_exprs(exprs.iter().map(|expr| expr.as_ref().clone()));
+        let first_shape = exprs[0].shape();
+        let all_same_shape = exprs.iter().all(|expr| expr.shape() == first_shape);
+        let shape = if all_same_shape {
+            first_shape
+        } else {
+            exprs
+                .iter()
+                .map(|expr| expr.shape())
+                .reduce(|acc, shape| {
+                    acc.broadcast(&shape)
+                        .unwrap_or_else(|| panic!("cannot broadcast shapes {} and {}", acc, shape))
+                })
+                .expect("minimum requires at least one expression")
+        };
         let (_, t) = self.new_aux_var(shape);
 
+        if all_same_shape {
+            for e in exprs {
+                let ce = self
+                    .canonicalize_expr(e.as_ref(), false)
+                    .as_linear()
+                    .clone();
+                // t <= x_i, i.e., x_i - t >= 0
+                self.constraints.push(ConeConstraint::NonNeg {
+                    a: ce.add(&t.neg()),
+                });
+            }
+            return CanonExpr::Linear(t);
+        }
+
+        let (_, exprs) =
+            broadcast_elementwise_exprs(exprs.iter().map(|expr| expr.as_ref().clone()));
         for e in &exprs {
             let ce = self.canonicalize_expr(e, false).as_linear().clone();
             // t <= x_i, i.e., x_i - t >= 0
