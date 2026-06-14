@@ -6,6 +6,7 @@
 //! - **Nonlinear atoms**: Operations with specific curvature (norms, quadratic forms, etc.)
 
 pub mod affine;
+pub(crate) mod broadcast;
 pub mod nonlinear;
 
 // Re-export affine operations

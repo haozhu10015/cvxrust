@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use crate::atoms::broadcast::broadcast_elementwise_exprs;
 use crate::expr::Expr;
 
 // ============================================================================
@@ -136,9 +137,14 @@ pub fn neg_part(x: &Expr) -> Expr {
 /// - Sign: Depends on arguments
 /// - Monotonicity: Increasing in all arguments
 pub fn maximum(exprs: Vec<Expr>) -> Expr {
+    if exprs.is_empty() {
+        panic!("maximum requires at least one expression");
+    }
     if exprs.len() == 1 {
         return exprs.into_iter().next().unwrap();
     }
+
+    let (_, exprs) = broadcast_elementwise_exprs(exprs);
     Expr::Maximum(exprs.into_iter().map(Arc::new).collect())
 }
 
@@ -154,9 +160,14 @@ pub fn max2(a: &Expr, b: &Expr) -> Expr {
 /// - Sign: Depends on arguments
 /// - Monotonicity: Increasing in all arguments
 pub fn minimum(exprs: Vec<Expr>) -> Expr {
+    if exprs.is_empty() {
+        panic!("minimum requires at least one expression");
+    }
     if exprs.len() == 1 {
         return exprs.into_iter().next().unwrap();
     }
+
+    let (_, exprs) = broadcast_elementwise_exprs(exprs);
     Expr::Minimum(exprs.into_iter().map(Arc::new).collect())
 }
 
@@ -288,11 +299,111 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "maximum requires at least one expression")]
+    fn test_maximum_empty_panics() {
+        let _ = maximum(Vec::new());
+    }
+
+    #[test]
+    fn test_maximum_single_expression_is_identity() {
+        let x = variable(5);
+        let m = maximum(vec![x.clone()]);
+        assert_eq!(m.shape(), x.shape());
+        assert_eq!(m.variables(), x.variables());
+    }
+
+    #[test]
+    fn test_maximum_broadcasts_scalar_to_vector() {
+        let x = variable(5);
+        let y = variable(());
+        let m = maximum(vec![x, y]);
+        assert_eq!(m.shape(), crate::expr::Shape::vector(5));
+    }
+
+    #[test]
+    fn test_maximum_three_args_stays_flat() {
+        let x = variable(5);
+        let y = variable(5);
+        let z = variable(());
+        let m = maximum(vec![x, y, z]);
+
+        match m {
+            Expr::Maximum(args) => {
+                assert_eq!(args.len(), 3);
+                assert!(
+                    args.iter()
+                        .all(|arg| arg.shape() == crate::expr::Shape::vector(5))
+                );
+                assert!(!matches!(&*args[0], Expr::Maximum(_)));
+            }
+            _ => panic!("expected maximum expression"),
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot broadcast shapes (2,) and (3,)")]
+    fn test_maximum_incompatible_shapes_panic() {
+        let x = variable(2);
+        let y = variable(3);
+        let _ = maximum(vec![x, y]);
+    }
+
+    #[test]
     fn test_minimum_concave() {
         let x = variable(5);
         let y = variable(5);
         let m = minimum(vec![x, y]);
         assert_eq!(m.curvature(), Curvature::Concave);
+    }
+
+    #[test]
+    #[should_panic(expected = "minimum requires at least one expression")]
+    fn test_minimum_empty_panics() {
+        let _ = minimum(Vec::new());
+    }
+
+    #[test]
+    fn test_minimum_single_expression_is_identity() {
+        let x = variable(5);
+        let m = minimum(vec![x.clone()]);
+        assert_eq!(m.shape(), x.shape());
+        assert_eq!(m.variables(), x.variables());
+    }
+
+    #[test]
+    fn test_minimum_broadcasts_scalar_to_vector() {
+        let x = variable(5);
+        let y = variable(());
+        let m = minimum(vec![x, y]);
+        assert_eq!(m.shape(), crate::expr::Shape::vector(5));
+    }
+
+    #[test]
+    fn test_minimum_three_args_stays_flat() {
+        let x = variable(5);
+        let y = variable(5);
+        let z = variable(());
+        let m = minimum(vec![x, y, z]);
+
+        match m {
+            Expr::Minimum(args) => {
+                assert_eq!(args.len(), 3);
+                assert!(
+                    args.iter()
+                        .all(|arg| arg.shape() == crate::expr::Shape::vector(5))
+                );
+                assert!(!matches!(&*args[0], Expr::Minimum(_)));
+            }
+            _ => panic!("expected minimum expression"),
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot broadcast shapes (2,) and (3,)")]
+    fn test_minimum_incompatible_shapes_panic() {
+        let x = variable(2);
+        let y = variable(3);
+        let _ = minimum(vec![x, y]);
     }
 
     #[test]

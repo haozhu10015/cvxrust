@@ -62,7 +62,7 @@ impl Constraint {
 
     /// Broadcast scalars to match shapes if needed.
     fn broadcast_if_needed(lhs: Expr, rhs: Expr) -> (Expr, Expr) {
-        crate::atoms::affine::broadcast_exprs(lhs, rhs)
+        crate::atoms::broadcast::broadcast_exprs(lhs, rhs)
     }
 
     /// Create a SOC constraint: ||x||_2 <= t.

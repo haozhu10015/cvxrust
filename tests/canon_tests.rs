@@ -314,6 +314,103 @@ fn test_constant_vector_times_scalar_affine_broadcasts() {
     }
 }
 
+#[test]
+fn test_norm1_matrix_variable_canonicalizes_flat_aux_constraints() {
+    let x = variable((2, 3));
+
+    let sol = Problem::minimize(norm1(&x))
+        .subject_to([x.ge(1.0)])
+        .solve()
+        .expect("matrix norm1 problem should solve");
+
+    assert!((sol.value.unwrap() - 6.0).abs() < TOL);
+}
+
+#[test]
+fn test_norm_inf_matrix_variable_canonicalizes_flat_aux_constraints() {
+    let x = variable((2, 3));
+
+    let sol = Problem::minimize(norm_inf(&x))
+        .subject_to([sum(&x).eq(6.0)])
+        .solve()
+        .expect("matrix norm_inf problem should solve");
+
+    assert!((sol.value.unwrap() - 1.0).abs() < TOL);
+}
+
+#[test]
+fn test_sum_squares_matrix_argument_flattens_soc_stack() {
+    let x = variable((2, 3));
+
+    let sol = Problem::maximize(sum(&x))
+        .subject_to([sum_squares(&x).le(1.0)])
+        .solve()
+        .expect("matrix sum_squares constraint should solve");
+
+    assert!((sol.value.unwrap() - 6.0_f64.sqrt()).abs() < TOL);
+}
+
+#[test]
+fn test_quad_over_lin_matrix_argument_flattens_soc_stack() {
+    let x = variable((2, 3));
+
+    let sol = Problem::maximize(sum(&x))
+        .subject_to([quad_over_lin(&x, &constant(1.0)).le(1.0)])
+        .solve()
+        .expect("matrix quad_over_lin constraint should solve");
+
+    assert!((sol.value.unwrap() - 6.0_f64.sqrt()).abs() < TOL);
+}
+
+#[test]
+fn test_maximum_minimum_accept_vector_and_column_shapes() {
+    let x = variable(3);
+    let y = variable((3, 1));
+
+    assert_eq!(
+        maximum(vec![x.clone(), y.clone()]).shape(),
+        Shape::vector(3)
+    );
+    assert_eq!(
+        minimum(vec![x.clone(), y.clone()]).shape(),
+        Shape::vector(3)
+    );
+    assert_eq!(max2(&x, &y).shape(), Shape::vector(3));
+    assert_eq!(min2(&x, &y).shape(), Shape::vector(3));
+}
+
+#[test]
+fn test_vstack_matrix_constraint_uses_column_major_interleaving() {
+    let x = variable((2, 2));
+    let y = variable((1, 2));
+    let target = constant_dmatrix(DMatrix::from_row_slice(
+        3,
+        2,
+        &[1.0, 4.0, 2.0, 5.0, 3.0, 6.0],
+    ));
+
+    let sol = Problem::minimize(sum(&x))
+        .subject_to([vstack(vec![x.clone(), y.clone()]).eq(target)])
+        .solve()
+        .expect("matrix vstack equality should solve");
+
+    if let Array::Dense(x_vals) = x.value(&sol) {
+        assert!((x_vals[(0, 0)] - 1.0).abs() < TOL);
+        assert!((x_vals[(1, 0)] - 2.0).abs() < TOL);
+        assert!((x_vals[(0, 1)] - 4.0).abs() < TOL);
+        assert!((x_vals[(1, 1)] - 5.0).abs() < TOL);
+    } else {
+        panic!("expected dense matrix solution for x");
+    }
+
+    if let Array::Dense(y_vals) = y.value(&sol) {
+        assert!((y_vals[(0, 0)] - 3.0).abs() < TOL);
+        assert!((y_vals[(0, 1)] - 6.0).abs() < TOL);
+    } else {
+        panic!("expected dense matrix solution for y");
+    }
+}
+
 fn solution_value(sol: &Solution, expr: &Expr) -> f64 {
     expr.value(sol).as_scalar().expect("expected scalar")
 }

@@ -84,20 +84,54 @@ impl LinExpr {
 
     /// Add two linear expressions.
     pub fn add(&self, other: &LinExpr) -> LinExpr {
+        let new_shape =
+            if self.shape.rows() == other.shape.rows() && self.shape.cols() == other.shape.cols() {
+                if self.shape.is_vector() {
+                    self.shape.clone()
+                } else if other.shape.is_vector() {
+                    other.shape.clone()
+                } else {
+                    self.shape.clone()
+                }
+            } else if self.shape.is_scalar_like() && !other.shape.is_scalar_like() {
+                other.shape.clone()
+            } else if other.shape.is_scalar_like() && !self.shape.is_scalar_like() {
+                self.shape.clone()
+            } else if self.shape.size() == other.shape.size() {
+                Shape::vector(self.shape.size())
+            } else {
+                panic!(
+                    "cannot add linear expressions with shapes {} and {}",
+                    self.shape, other.shape
+                )
+            };
+        let new_size = new_shape.size();
+
         // Optimization: if self has no coefficients, just clone other's
         let coeffs = if self.coeffs.is_empty() {
-            other.coeffs.clone()
+            other
+                .coeffs
+                .iter()
+                .map(|(var_id, coeff)| (*var_id, coeff_for_size(coeff, other.size(), new_size)))
+                .collect()
         } else if other.coeffs.is_empty() {
-            self.coeffs.clone()
+            self.coeffs
+                .iter()
+                .map(|(var_id, coeff)| (*var_id, coeff_for_size(coeff, self.size(), new_size)))
+                .collect()
         } else {
             // Both have coefficients - clone the larger one and merge smaller into it
-            let mut coeffs = self.coeffs.clone();
+            let mut coeffs = HashMap::new();
+            for (var_id, coeff) in &self.coeffs {
+                coeffs.insert(*var_id, coeff_for_size(coeff, self.size(), new_size));
+            }
             coeffs.reserve(other.coeffs.len());
             for (var_id, coeff) in &other.coeffs {
+                let coeff = coeff_for_size(coeff, other.size(), new_size);
                 coeffs
                     .entry(*var_id)
-                    .and_modify(|c| *c = csc_add(c, coeff))
-                    .or_insert_with(|| coeff.clone());
+                    .and_modify(|c| *c = csc_add(c, &coeff))
+                    .or_insert(coeff);
             }
             coeffs
         };
@@ -115,15 +149,21 @@ impl LinExpr {
             // Broadcast scalar self to match other's shape
             let scalar = self.constant[(0, 0)];
             other.constant.map(|v| v + scalar)
+        } else if self.shape.size() == other.shape.size() {
+            let self_flat = self
+                .constant
+                .clone()
+                .reshape_generic(nalgebra::Dyn(new_size), nalgebra::Dyn(1));
+            let other_flat = other
+                .constant
+                .clone()
+                .reshape_generic(nalgebra::Dyn(new_size), nalgebra::Dyn(1));
+            self_flat + other_flat
         } else {
-            // Incompatible shapes, just use self (will likely error later)
-            self.constant.clone()
-        };
-
-        let new_shape = if self.shape.size() >= other.shape.size() {
-            self.shape.clone()
-        } else {
-            other.shape.clone()
+            panic!(
+                "cannot add linear expression constants with shapes {} and {}",
+                self.shape, other.shape
+            );
         };
 
         LinExpr {
@@ -163,6 +203,35 @@ impl LinExpr {
         vars.sort_by_key(|id| id.raw());
         vars
     }
+}
+
+fn coeff_for_size(
+    coeff: &CscMatrix<f64>,
+    source_size: usize,
+    target_size: usize,
+) -> CscMatrix<f64> {
+    if coeff.nrows() == target_size {
+        return coeff.clone();
+    }
+    if source_size == 1 {
+        let mut rows = Vec::new();
+        let mut cols = Vec::new();
+        let mut vals = Vec::new();
+        for (row, col, val) in coeff.triplet_iter() {
+            debug_assert_eq!(row, 0);
+            for target_row in 0..target_size {
+                rows.push(target_row);
+                cols.push(col);
+                vals.push(*val);
+            }
+        }
+        return crate::sparse::triplets_to_csc(target_size, coeff.ncols(), &rows, &cols, &vals);
+    }
+    panic!(
+        "cannot resize coefficient rows from {} to {}",
+        coeff.nrows(),
+        target_size
+    );
 }
 
 /// A quadratic expression: (1/2) x' P x + q' x + r
@@ -284,6 +353,14 @@ mod tests {
         let e2 = LinExpr::variable(var2, Shape::vector(3));
         let sum = e1.add(&e2);
         assert_eq!(sum.variables().len(), 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot add linear expressions with shapes (2,) and (3,)")]
+    fn test_lin_expr_add_incompatible_shapes_panics() {
+        let e1 = LinExpr::variable(ExprId::new(), Shape::vector(2));
+        let e2 = LinExpr::variable(ExprId::new(), Shape::vector(3));
+        let _ = e1.add(&e2);
     }
 
     #[test]
